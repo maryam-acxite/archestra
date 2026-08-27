@@ -1,0 +1,28 @@
+name: Weekly Sync Archestra Upstream
+
+on:
+  schedule:
+    # Runs every Sunday at 00:00 UTC
+    - cron: '30 16 * * *'
+  workflow_dispatch: # Allows manual run anytime from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Sync with Archestra Upstream
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        with:
+          upstream_sync_repo: archestra-ai/archestra
+          upstream_sync_branch: main
+          target_sync_branch: main
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          test_mode: false
