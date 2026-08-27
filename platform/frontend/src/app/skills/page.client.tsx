@@ -11,8 +11,6 @@ import {
   BookOpen,
   Braces,
   ChartColumn,
-  ChevronDown,
-  ChevronUp,
   History,
   Info,
   MessageSquare,
@@ -51,9 +49,7 @@ import { SearchInput } from "@/components/search-input";
 import { useSkillsPluginsNavTabs } from "@/components/skills-plugins-nav-tabs";
 import {
   TableCard,
-  TableCardList,
   TableCardView,
-  TableCardViewContent,
   TableCardViewToggle,
 } from "@/components/table-card-view";
 import {
@@ -63,8 +59,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
-import { Button } from "@/components/ui/button";
-import { DataTable } from "@/components/ui/data-table";
 import { PermissionButton } from "@/components/ui/permission-button";
 import {
   Select,
@@ -91,6 +85,7 @@ import {
   useBulkDeleteSkills,
   useExternalMcpSkills,
   usePermanentlyDeleteSkill,
+  usePluginSkills,
   useRestoreSkill,
   useSkillSourceRepos,
   useSkillsPaginated,
@@ -107,16 +102,24 @@ import {
   filterExternalMcpSkills,
 } from "./_parts/external-mcp-skills-section";
 import {
+  filterPluginSkills,
+  PluginSkillsSection,
+} from "./_parts/plugin-skills-section";
+import {
   getSkillActionModel,
   skillAction,
   skillActionHref,
 } from "./_parts/skill-actions-model";
+import {
+  SkillCollection,
+  SkillSortableHeader,
+} from "./_parts/skill-collection";
 import { skillEditHref, skillUsageHref } from "./_parts/skill-page-config";
 import { SkillUsageSummary } from "./_parts/skill-usage-summary";
 import { SkillVersionHistoryDialog } from "./_parts/skill-version-history-dialog";
 
 type SkillItem = archestraApiTypes.GetSkillsResponses["200"]["data"][number];
-type SkillKind = "all" | "standalone" | "mcp";
+type SkillKind = "all" | "standalone" | "mcp" | "plugin";
 
 const SYNC_INTERVAL_LABELS: Record<string, string> = {
   "15m": "Synced every 15 minutes",
@@ -195,14 +198,29 @@ function SkillsList() {
   const { data: sourceReposData } = useSkillSourceRepos();
   const sourceRepos = sourceReposData?.repos ?? [];
   const mcpSkillsEnabled = useFeature("mcpGatewaySkillsEnabled") === true;
+  const pluginsEnabled = useFeature("plugins") === true;
+  const { data: canReadPlugins } = useHasPermissions({ plugin: ["read"] });
+  const pluginSkillsEnabled = pluginsEnabled && canReadPlugins === true;
   const kindParam = searchParams.get("kind");
   const requestedKind: SkillKind =
-    kindParam === "standalone" || kindParam === "mcp" ? kindParam : "all";
+    kindParam === "standalone" || kindParam === "mcp" || kindParam === "plugin"
+      ? kindParam
+      : "all";
   const kind: SkillKind =
-    isDeletedView || !mcpSkillsEnabled ? "standalone" : requestedKind;
-  const showStandaloneSkills = kind !== "mcp";
+    isDeletedView || (!mcpSkillsEnabled && !pluginSkillsEnabled)
+      ? "standalone"
+      : requestedKind === "mcp" && !mcpSkillsEnabled
+        ? "all"
+        : requestedKind === "plugin" && !pluginSkillsEnabled
+          ? "all"
+          : requestedKind;
+  const showStandaloneSkills = kind === "all" || kind === "standalone";
   const showMcpSkills =
-    mcpSkillsEnabled && !isDeletedView && kind !== "standalone";
+    mcpSkillsEnabled && !isDeletedView && (kind === "all" || kind === "mcp");
+  const showPluginSkills =
+    pluginSkillsEnabled &&
+    !isDeletedView &&
+    (kind === "all" || kind === "plugin");
   const { data: externalSkills = [], isFetching: isExternalSkillsFetching } =
     useExternalMcpSkills({
       enabled: showMcpSkills,
@@ -211,6 +229,15 @@ function SkillsList() {
     ? []
     : filterExternalMcpSkills({
         skills: externalSkills,
+        search,
+        scope: scopeFilter.scope,
+      });
+  const { data: pluginSkills = [], isFetching: isPluginSkillsFetching } =
+    usePluginSkills({ enabled: showPluginSkills });
+  const visiblePluginSkills = sourceRepo
+    ? []
+    : filterPluginSkills({
+        skills: pluginSkills,
         search,
         scope: scopeFilter.scope,
       });
@@ -239,7 +266,7 @@ function SkillsList() {
       } else {
         params.set("kind", value);
       }
-      if (value === "mcp") {
+      if (value === "mcp" || value === "plugin") {
         params.delete("sourceRepo");
       }
       params.set("page", "1");
@@ -368,17 +395,23 @@ function SkillsList() {
     !!sourceRepo ||
     scopeFilter.hasActiveScopeFilters ||
     isDeletedView ||
-    (mcpSkillsEnabled && !isDeletedView && kind !== "all");
+    ((mcpSkillsEnabled || pluginSkillsEnabled) &&
+      !isDeletedView &&
+      kind !== "all");
   const hasVisibleSkills =
     (showStandaloneSkills && totalSkills > 0) ||
-    (showMcpSkills && visibleExternalSkills.length > 0);
+    (showMcpSkills && visibleExternalSkills.length > 0) ||
+    (showPluginSkills && visiblePluginSkills.length > 0);
   const showEmptyState =
     !isFetching &&
     !(showMcpSkills && isExternalSkillsFetching) &&
+    !(showPluginSkills && isPluginSkillsFetching) &&
     !hasVisibleSkills &&
     !hasActiveFilters;
   const noVisibleFilterResults =
-    totalSkills === 0 && visibleExternalSkills.length === 0;
+    totalSkills === 0 &&
+    visibleExternalSkills.length === 0 &&
+    visiblePluginSkills.length === 0;
   const showStandaloneSection =
     showStandaloneSkills &&
     (totalSkills > 0 ||
@@ -387,7 +420,10 @@ function SkillsList() {
       (kind === "all" && noVisibleFilterResults));
   const showMcpSection =
     showMcpSkills && (visibleExternalSkills.length > 0 || kind === "mcp");
-  const showStandaloneHeading = isDeletedView || mcpSkillsEnabled;
+  const showPluginSection =
+    showPluginSkills && (visiblePluginSkills.length > 0 || kind === "plugin");
+  const showStandaloneHeading =
+    isDeletedView || mcpSkillsEnabled || pluginSkillsEnabled;
 
   const clearFilters = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -514,14 +550,11 @@ function SkillsList() {
       id: "name",
       accessorKey: "name",
       header: ({ column }) => (
-        <Button
-          variant="ghost"
-          className="h-auto !p-0 font-medium hover:bg-transparent"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Skill
-          <SortIcon isSorted={column.getIsSorted()} />
-        </Button>
+        <SkillSortableHeader
+          label="Skill"
+          isSorted={column.getIsSorted()}
+          onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        />
       ),
       size: 420,
       cell: ({ row }) => {
@@ -643,14 +676,13 @@ function SkillsList() {
         // Right padding keeps the right-aligned value from sitting flush
         // against the Actions buttons in the next cell.
         <div className="flex justify-end pr-6">
-          <Button
-            variant="ghost"
-            className="h-auto !p-0 font-medium hover:bg-transparent"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Uses
-            <SortIcon isSorted={column.getIsSorted()} />
-          </Button>
+          <SkillSortableHeader
+            label="Uses"
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          />
         </div>
       ),
       cell: ({ row }) => (
@@ -720,30 +752,38 @@ function SkillsList() {
                     paramName="search"
                     className={filterSearchClass}
                   />
-                  {mcpSkillsEnabled && !isDeletedView && (
-                    <Select value={kind} onValueChange={setKindFilter}>
-                      <SelectTrigger
-                        size="sm"
-                        aria-label="Filter by skill source"
-                        className={filterControlClass({
-                          active: kind !== "all",
-                        })}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent
-                        position="popper"
-                        side="bottom"
-                        align="start"
-                      >
-                        <SelectItem value="all">All kinds</SelectItem>
-                        <SelectItem value="standalone">
-                          Standalone skills
-                        </SelectItem>
-                        <SelectItem value="mcp">MCP skills</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
+                  {(mcpSkillsEnabled || pluginSkillsEnabled) &&
+                    !isDeletedView && (
+                      <Select value={kind} onValueChange={setKindFilter}>
+                        <SelectTrigger
+                          size="sm"
+                          aria-label="Filter by skill source"
+                          className={filterControlClass({
+                            active: kind !== "all",
+                          })}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent
+                          position="popper"
+                          side="bottom"
+                          align="start"
+                        >
+                          <SelectItem value="all">All kinds</SelectItem>
+                          <SelectItem value="standalone">
+                            Standalone skills
+                          </SelectItem>
+                          {mcpSkillsEnabled && (
+                            <SelectItem value="mcp">MCP skills</SelectItem>
+                          )}
+                          {pluginSkillsEnabled && (
+                            <SelectItem value="plugin">
+                              Skills from plugins
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
                   <ResourceScopeFilter
                     ownerLabelPlural="skills"
                     adminPermission={{ skill: ["admin"] }}
@@ -864,124 +904,98 @@ function SkillsList() {
                       </PermissionButton>
                     </BulkActions>
 
-                    <TableCardViewContent
+                    <SkillCollection
                       forceTable={isDeletedView}
-                      cards={
-                        <TableCardList
-                          itemCount={items.length}
-                          isLoading={isFetching}
-                          emptyIcon={Sparkles}
-                          emptyMessage="No standalone skills yet."
-                          hasActiveFilters={hasActiveFilters}
-                          filteredEmptyMessage="No standalone skills match the current filters."
-                          onClearFilters={clearFilters}
-                          pagination={{
-                            pageIndex,
-                            pageSize,
-                            total: totalSkills,
-                          }}
-                          onPaginationChange={handlePaginationChange}
-                        >
-                          {items.map((skill) => {
-                            const repo = parseRepoFromSourceRef(
-                              skill.sourceRef,
-                            );
-                            return (
-                              <TableCard
-                                key={skill.id}
-                                icon={
-                                  <SkillSourceIcon
-                                    repo={repo}
-                                    builtIn={skill.sourceType === "built_in"}
-                                    appIconLogo={appIconLogo}
-                                  />
-                                }
-                                title={
-                                  <Link href={`/skills/${skill.id}`}>
-                                    {skill.name}
-                                  </Link>
-                                }
-                                description={skill.description}
-                                actions={renderSkillActions(skill)}
-                                {...cardSelection(skill)}
-                                selectionLabel={`Select ${skill.name}`}
-                                footer={
-                                  <div className="flex items-center justify-between gap-3">
-                                    <span>
-                                      {skill.fileCount}{" "}
-                                      {skill.fileCount === 1 ? "file" : "files"}
-                                    </span>
-                                    <span>
-                                      {skill.usageCount}{" "}
-                                      {skill.usageCount === 1 ? "use" : "uses"}
-                                    </span>
-                                  </div>
-                                }
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <ResourceVisibilityBadge
-                                    scope={skill.scope}
-                                    teams={skill.teams}
-                                    users={skill.users}
-                                    authorId={skill.authorId}
-                                    authorName={skill.authorName}
-                                    currentUserId={currentUserId}
-                                    showSelfAsMe
-                                  />
-                                  {skill.templated ? (
-                                    <Badge variant="outline">
-                                      <Braces className="mr-1 h-3 w-3" />
-                                      <span>templated</span>
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </TableCard>
-                            );
-                          })}
-                        </TableCardList>
+                      items={items}
+                      columns={columns}
+                      getRowId={(skill) => skill.id}
+                      renderCard={(skill) => {
+                        const repo = parseRepoFromSourceRef(skill.sourceRef);
+                        return (
+                          <TableCard
+                            key={skill.id}
+                            icon={
+                              <SkillSourceIcon
+                                repo={repo}
+                                builtIn={skill.sourceType === "built_in"}
+                                appIconLogo={appIconLogo}
+                              />
+                            }
+                            title={
+                              <Link href={`/skills/${skill.id}`}>
+                                {skill.name}
+                              </Link>
+                            }
+                            description={skill.description}
+                            actions={renderSkillActions(skill)}
+                            {...cardSelection(skill)}
+                            selectionLabel={`Select ${skill.name}`}
+                            footer={
+                              <div className="flex items-center justify-between gap-3">
+                                <span>
+                                  {skill.fileCount}{" "}
+                                  {skill.fileCount === 1 ? "file" : "files"}
+                                </span>
+                                <span>
+                                  {skill.usageCount}{" "}
+                                  {skill.usageCount === 1 ? "use" : "uses"}
+                                </span>
+                              </div>
+                            }
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ResourceVisibilityBadge
+                                scope={skill.scope}
+                                teams={skill.teams}
+                                users={skill.users}
+                                authorId={skill.authorId}
+                                authorName={skill.authorName}
+                                currentUserId={currentUserId}
+                                showSelfAsMe
+                              />
+                              {skill.templated ? (
+                                <Badge variant="outline">
+                                  <Braces className="mr-1 h-3 w-3" />
+                                  <span>templated</span>
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </TableCard>
+                        );
+                      }}
+                      isLoading={isFetching}
+                      emptyIcon={Sparkles}
+                      emptyMessage="No standalone skills yet."
+                      hasActiveFilters={hasActiveFilters}
+                      filteredEmptyMessage={
+                        isDeletedView
+                          ? "No deleted skills found."
+                          : "No standalone skills match the current filters."
                       }
-                      table={
-                        <DataTable
-                          columns={columns}
-                          data={items}
-                          getRowId={(row) => row.id}
-                          emptyIcon={Sparkles}
-                          emptyMessage="No standalone skills yet."
-                          hasActiveFilters={hasActiveFilters}
-                          filteredEmptyMessage={
-                            isDeletedView
-                              ? "No deleted skills found."
-                              : "No standalone skills match the current filters."
-                          }
-                          onClearFilters={clearFilters}
-                          hideSelectedCount
-                          manualPagination
-                          manualSorting
-                          sorting={sorting}
-                          onSortingChange={handleSortingChange}
-                          pagination={{
-                            pageIndex,
-                            pageSize,
-                            total: totalSkills,
-                          }}
-                          onPaginationChange={handlePaginationChange}
-                          onRowClick={
-                            isDeletedView
-                              ? undefined
-                              : (row) => router.push(`/skills/${row.id}`)
-                          }
-                          rowSelection={effectiveRowSelection}
-                          onRowSelectionChange={onRowSelectionChange}
-                          isLoading={isFetching}
-                          tableClassName="[&_td]:py-1.5"
-                          fixedWidthColumnIds={[
-                            "visibility",
-                            "files",
-                            "usageCount",
-                          ]}
-                          flexibleColumnIds={["name"]}
-                        />
+                      onClearFilters={clearFilters}
+                      manualPagination
+                      manualSorting
+                      sorting={sorting}
+                      onSortingChange={handleSortingChange}
+                      pagination={{
+                        pageIndex,
+                        pageSize,
+                        total: totalSkills,
+                      }}
+                      onPaginationChange={handlePaginationChange}
+                      onRowClick={
+                        isDeletedView
+                          ? undefined
+                          : (skill) => router.push(`/skills/${skill.id}`)
                       }
+                      rowSelection={effectiveRowSelection}
+                      onRowSelectionChange={onRowSelectionChange}
+                      fixedWidthColumnIds={[
+                        "visibility",
+                        "files",
+                        "usageCount",
+                      ]}
+                      flexibleColumnIds={["name"]}
                     />
                   </section>
                 )}
@@ -991,6 +1005,14 @@ function SkillsList() {
                     skills={visibleExternalSkills}
                     showWhenEmpty={kind === "mcp"}
                     isLoading={isExternalSkillsFetching}
+                  />
+                )}
+
+                {showPluginSection && (
+                  <PluginSkillsSection
+                    skills={visiblePluginSkills}
+                    showWhenEmpty={kind === "plugin"}
+                    isLoading={isPluginSkillsFetching}
                   />
                 )}
               </div>
@@ -1065,23 +1087,6 @@ const selectColumn = createSelectColumn<SkillItem>({
   rowLabel: (row) => `Select ${row.name}`,
   allLabel: "Select all skills on this page",
 });
-
-function SortIcon({ isSorted }: { isSorted: "asc" | "desc" | false }) {
-  const upArrow = <ChevronUp className="h-3 w-3" />;
-  const downArrow = <ChevronDown className="h-3 w-3" />;
-  if (isSorted === "asc") {
-    return upArrow;
-  }
-  if (isSorted === "desc") {
-    return downArrow;
-  }
-  return (
-    <div className="text-muted-foreground flex flex-col items-center">
-      {upArrow}
-      <span className="mt-[-4px]">{downArrow}</span>
-    </div>
-  );
-}
 
 function SkillSourceIcon({
   repo,

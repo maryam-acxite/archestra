@@ -20166,6 +20166,7 @@ export type CreateAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -21258,6 +21259,7 @@ export type GetAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -21316,6 +21318,7 @@ export type UpdateAppData = {
             keyId?: string;
             valueId?: string;
         }>;
+        openInFullscreen?: boolean;
         teamIds?: Array<string>;
         userIds?: Array<string>;
     };
@@ -21428,6 +21431,7 @@ export type UpdateAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -21764,6 +21768,7 @@ export type EnableAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -21904,6 +21909,7 @@ export type DisableAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -22044,6 +22050,7 @@ export type LockAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -22184,6 +22191,7 @@ export type UnlockAppResponses = {
         } | null;
         latestVersion: number;
         enabled: boolean;
+        openInFullscreen: boolean;
         locked: boolean;
         createdAt: string;
         updatedAt: string;
@@ -68184,6 +68192,7 @@ export type GetMcpServerAutoModeAgentsResponses = {
         name: string;
         agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
         scope: 'personal' | 'team' | 'org';
+        ownerId: string | null;
         ownerEmail: string | null;
     }>;
 };
@@ -68318,6 +68327,7 @@ export type GetMcpServersResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -68329,6 +68339,10 @@ export type GetMcpServersResponses = {
             reason: string;
             mutedAt: string;
         }>;
+        /**
+         * Whether the caller may present this install's stored credential to the upstream — their own connection, or one shared with them. False for another member's personal connection, which the listing still returns to installation admins so they can manage it.
+         */
+        canUseCredential: boolean;
     }>;
 };
 
@@ -68475,6 +68489,7 @@ export type InstallMcpServerResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -68690,6 +68705,7 @@ export type GetMcpServerResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -68830,6 +68846,7 @@ export type ReauthenticateMcpServerResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -69057,6 +69074,7 @@ export type RestoreMcpServerResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -69653,6 +69671,7 @@ export type ReinstallMcpServerResponses = {
             name: string;
             agentType: 'profile' | 'mcp_gateway' | 'llm_proxy' | 'agent';
             scope: 'personal' | 'team' | 'org';
+            ownerId: string | null;
             ownerEmail: string | null;
         }>;
         secretStorageType?: 'vault' | 'external_vault' | 'database' | 'none';
@@ -82170,6 +82189,320 @@ export type UpdatePluginResponses = {
 };
 
 export type UpdatePluginResponse = UpdatePluginResponses[keyof UpdatePluginResponses];
+
+export type GetPluginSkillsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/skills/plugins';
+};
+
+export type GetPluginSkillsErrors = {
+    /**
+     * Default Response
+     */
+    400: {
+        error: {
+            message: string;
+            type: 'api_validation_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    401: {
+        error: {
+            message: string;
+            type: 'api_authentication_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    403: {
+        error: {
+            message: string;
+            type: 'api_authorization_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    404: {
+        error: {
+            message: string;
+            type: 'api_not_found_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    409: {
+        error: {
+            message: string;
+            type: 'api_conflict_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    500: {
+        error: {
+            message: string;
+            type: 'api_internal_server_error';
+            internal_code?: string;
+        };
+    };
+};
+
+export type GetPluginSkillsError = GetPluginSkillsErrors[keyof GetPluginSkillsErrors];
+
+export type GetPluginSkillsResponses = {
+    /**
+     * Default Response
+     */
+    200: Array<{
+        source: 'plugin';
+        pluginId: string;
+        pluginName: string;
+        pluginSlug: string;
+        sourceRepo: string | null;
+        sourceMarketplaceRepo: string | null;
+        pluginEnabled: boolean;
+        scope: 'personal' | 'team' | 'org';
+        clientType: 'claude-code' | 'copilot-cli' | 'codex' | 'cursor';
+        supportedPlatforms: Array<'posix' | 'windows'>;
+        skillPath: string;
+        name: string;
+        description: string;
+        compatibility: string | null;
+        fileCount: number;
+        usageCount: number;
+        usageUserCount: number;
+        lastUsedAt: string | null;
+    }>;
+};
+
+export type GetPluginSkillsResponse = GetPluginSkillsResponses[keyof GetPluginSkillsResponses];
+
+export type GetPluginSkillUsageStatisticsData = {
+    body?: never;
+    path: {
+        pluginId: string;
+    };
+    query?: {
+        skillPath?: string;
+    };
+    url: '/api/skills/plugins/{pluginId}/usage-statistics';
+};
+
+export type GetPluginSkillUsageStatisticsErrors = {
+    /**
+     * Default Response
+     */
+    400: {
+        error: {
+            message: string;
+            type: 'api_validation_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    401: {
+        error: {
+            message: string;
+            type: 'api_authentication_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    403: {
+        error: {
+            message: string;
+            type: 'api_authorization_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    404: {
+        error: {
+            message: string;
+            type: 'api_not_found_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    409: {
+        error: {
+            message: string;
+            type: 'api_conflict_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    500: {
+        error: {
+            message: string;
+            type: 'api_internal_server_error';
+            internal_code?: string;
+        };
+    };
+};
+
+export type GetPluginSkillUsageStatisticsError = GetPluginSkillUsageStatisticsErrors[keyof GetPluginSkillUsageStatisticsErrors];
+
+export type GetPluginSkillUsageStatisticsResponses = {
+    /**
+     * Default Response
+     */
+    200: {
+        since: string;
+        users: Array<{
+            userId: string | null;
+            name: string | null;
+            kind: 'user' | 'service_account' | 'unattributed';
+            total: number;
+        }>;
+        daily: Array<{
+            date: string;
+            userId: string | null;
+            count: number;
+        }>;
+    };
+};
+
+export type GetPluginSkillUsageStatisticsResponse = GetPluginSkillUsageStatisticsResponses[keyof GetPluginSkillUsageStatisticsResponses];
+
+export type GetPluginSkillData = {
+    body?: never;
+    path: {
+        pluginId: string;
+    };
+    query?: {
+        /**
+         * Parent directory of the SKILL.md inside the plugin; omit for a root-level skill.
+         */
+        skillPath?: string;
+    };
+    url: '/api/skills/plugins/{pluginId}';
+};
+
+export type GetPluginSkillErrors = {
+    /**
+     * Default Response
+     */
+    400: {
+        error: {
+            message: string;
+            type: 'api_validation_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    401: {
+        error: {
+            message: string;
+            type: 'api_authentication_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    403: {
+        error: {
+            message: string;
+            type: 'api_authorization_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    404: {
+        error: {
+            message: string;
+            type: 'api_not_found_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    409: {
+        error: {
+            message: string;
+            type: 'api_conflict_error';
+            internal_code?: string;
+        };
+    };
+    /**
+     * Default Response
+     */
+    500: {
+        error: {
+            message: string;
+            type: 'api_internal_server_error';
+            internal_code?: string;
+        };
+    };
+};
+
+export type GetPluginSkillError = GetPluginSkillErrors[keyof GetPluginSkillErrors];
+
+export type GetPluginSkillResponses = {
+    /**
+     * Default Response
+     */
+    200: {
+        source: 'plugin';
+        pluginId: string;
+        pluginName: string;
+        pluginSlug: string;
+        sourceRepo: string | null;
+        sourceMarketplaceRepo: string | null;
+        pluginEnabled: boolean;
+        scope: 'personal' | 'team' | 'org';
+        clientType: 'claude-code' | 'copilot-cli' | 'codex' | 'cursor';
+        supportedPlatforms: Array<'posix' | 'windows'>;
+        skillPath: string;
+        name: string;
+        description: string;
+        compatibility: string | null;
+        fileCount: number;
+        usageCount: number;
+        usageUserCount: number;
+        lastUsedAt: string | null;
+        manifest: string;
+        content: string;
+        allowedTools: string | null;
+        files: Array<{
+            path: string;
+            content: string;
+            encoding: 'utf8' | 'base64';
+            kind: 'script' | 'reference' | 'asset';
+        }>;
+    };
+};
+
+export type GetPluginSkillResponse = GetPluginSkillResponses[keyof GetPluginSkillResponses];
 
 export type GetProjectsData = {
     body?: never;

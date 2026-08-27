@@ -67,6 +67,9 @@ export const E2eTestId = {
   EditAgentButton: "edit-agent-button",
   AgentToolsSection: "agent-tools-section",
   AgentToolsAddButton: "agent-tools-add-button",
+  AgentKnowledgeSources: "agent-knowledge-sources",
+  AgentKnowledgeSourcePill: "agent-knowledge-source-pill",
+  AgentKnowledgeSourcesCombobox: "agent-knowledge-sources-combobox",
   AgentKnowledgeSourceExclusions: "agent-knowledge-source-exclusions",
   AgentKnowledgeSourceExclusionPill: "agent-knowledge-source-exclusion-pill",
   AgentKnowledgeSourceExclusionsCombobox:
@@ -110,6 +113,8 @@ export const E2eTestId = {
   ManageMembersButton: "manage-members-button",
   // Chat Settings
   ChatApiKeysTable: "chat-api-keys-table",
+  SubscriptionProviderCards: "subscription-provider-cards",
+  SubscriptionProviderCard: "subscription-provider-card",
   AddChatApiKeyButton: "add-chat-api-key-button",
   ChatApiKeyRow: "chat-api-key-row",
   ChatApiKeyForm: "chat-api-key-form",
@@ -164,6 +169,7 @@ export const E2eTestId = {
   McpLogsViewButton: "mcp-logs-view-button",
   McpLogsEditConfigButton: "mcp-logs-edit-config-button",
   McpLogsTab: "mcp-logs-tab",
+  McpInspectorNoConnection: "mcp-inspector-no-connection",
   // Connectivity / offline status bar
   ConnectivityStatusBar: "connectivity-status-bar",
   ConnectivityStatusBarRetry: "connectivity-status-bar-retry",
