@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  archestra:
+    image: archestra/platform:latest
+    container_name: archestra-platform
+    restart: unless-stopped
+    environment:
+      - ARCHESTRA_QUICKSTART=true
+      - ARCHESTRA_BETA=true
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - archestra_postgres:/var/lib/postgresql/data
+      - archestra_data:/app/data
+
+volumes:
+  archestra_postgres:
+  archestra_data:
