@@ -21,6 +21,8 @@ import {
 import { WizardFooter } from "@/components/wizard-footer";
 import { WizardStepper } from "@/components/wizard-stepper";
 import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useFeature } from "@/lib/config/config.query";
+import { AgentCatalog, type AgentCatalogTemplate } from "./agent-catalog";
 import {
   AGENT_PAGE_CONFIGS,
   type AgentPageKind,
@@ -41,6 +43,12 @@ import { AgentPageShell } from "./agent-page-shell";
 export function AgentCreatePage({ kind }: { kind: AgentPageKind }) {
   const config = AGENT_PAGE_CONFIGS[kind];
   const router = useRouter();
+  const backgroundExecutionEnabled = useFeature("agentBackgroundExecution");
+  const catalogEnabled =
+    kind === "agent" && backgroundExecutionEnabled === true;
+  const [sourceSelected, setSourceSelected] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<AgentCatalogTemplate | null>(null);
   const steps = getAgentSetupSteps({ agentType: kind, builtIn: false });
   const [step, setStep] = useState<AgentSetupStepId>(steps[0].id);
   const stepIndex = steps.findIndex((s) => s.id === step);
@@ -86,6 +94,33 @@ export function AgentCreatePage({ kind }: { kind: AgentPageKind }) {
   // Same dirty check the modal used to run on close, now guarding Cancel and
   // the back link.
   const guard = useUnsavedChangesGuard({ isDirty, onOpenChange: leave });
+  const isChoosingSource = catalogEnabled && !sourceSelected;
+  const header = {
+    title: `Create ${config.singular}`,
+    description: isChoosingSource
+      ? "Choose a maintained Agent template or start from scratch."
+      : selectedTemplate
+        ? `${selectedTemplate.name} is prefilled below. Review or change any setting before creating it.`
+        : config.createDescription,
+    action:
+      !isChoosingSource && steps.length > 1 ? (
+        <div className="hidden sm:block">
+          <WizardStepper
+            compact
+            steps={steps}
+            activeStep={step}
+            // Earlier steps can be revisited; a later one is reached through
+            // its predecessor's Next, which is what checks the step is
+            // complete.
+            onStepClick={(target) => {
+              const targetIndex = steps.findIndex((s) => s.id === target);
+              if (targetIndex < stepIndex) goToStep(target);
+            }}
+            stepTestIdPrefix={E2eTestId.AgentSetupStep}
+          />
+        </div>
+      ) : undefined,
+  };
 
   return (
     <AgentPageShell
@@ -94,6 +129,7 @@ export function AgentCreatePage({ kind }: { kind: AgentPageKind }) {
       backHref={showsUnreadableSuccess ? undefined : agentListHref(kind)}
       backLabel={config.plural}
       onBackRequest={guard.requestClose}
+      header={header}
     >
       {showsUnreadableSuccess ? (
         <Empty className="border">
@@ -125,108 +161,110 @@ export function AgentCreatePage({ kind }: { kind: AgentPageKind }) {
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
+      ) : isChoosingSource ? (
+        <AgentCatalog
+          onStartFromScratch={() => {
+            setSelectedTemplate(null);
+            setSourceSelected(true);
+          }}
+          onSelect={(template) => {
+            setSelectedTemplate(template);
+            setSourceSelected(true);
+          }}
+        />
       ) : (
-        <>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Create {config.singular}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {config.createDescription}
-            </p>
-          </div>
-
-          <WizardStepper
-            steps={steps}
-            activeStep={step}
-            // Earlier steps can be revisited; a later one is reached through
-            // its predecessor's Next, which is what checks the step is
-            // complete.
-            onStepClick={(target) => {
-              const targetIndex = steps.findIndex((s) => s.id === target);
-              if (targetIndex < stepIndex) goToStep(target);
-            }}
-            stepTestIdPrefix={E2eTestId.AgentSetupStep}
-          />
-
-          <AgentForm
-            agentType={kind}
-            defaultIconType={config.defaultIconType}
-            // One mount for the whole wizard: the steps show one group at a
-            // time, and what was picked on a step stays on the form until the
-            // create at the end.
-            activeSection={step}
-            submitEnabled={!nextStep}
-            onDirtyChange={setIsDirty}
-            onCreated={(record) => {
-              // The record is saved: nothing is unsaved any more, whichever
-              // way the effect above decides to leave.
-              setIsDirty(false);
-              setCreated(record);
-            }}
-            footer={({ isSaving, canSubmit }) => (
-              <WizardFooter>
-                <div>
-                  {prevStep ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isSaving}
-                      onClick={() => goToStep(prevStep.id)}
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      <span>{prevStep.title}</span>
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={guard.requestClose}
-                      disabled={isSaving}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-                {nextStep ? (
-                  // Moving on needs what a create would need of this step (a
-                  // name, a complete visibility choice), so the last step is
-                  // never reached with a record that cannot be created.
-                  //
-                  // Keyed apart from the Create button, and with the default
-                  // action stopped: the step change re-renders this slot as
-                  // the submit button while the click is still dispatching,
-                  // and a reused DOM button would then submit the form.
+        <AgentForm
+          agentType={kind}
+          defaultIconType={config.defaultIconType}
+          initialValues={selectedTemplate?.initialValues}
+          // One mount for the whole wizard: the steps show one group at a
+          // time, and what was picked on a step stays on the form until the
+          // create at the end.
+          activeSection={step}
+          submitEnabled={!nextStep}
+          onDirtyChange={setIsDirty}
+          onCreated={(record) => {
+            // The record is saved: nothing is unsaved any more, whichever
+            // way the effect above decides to leave.
+            setIsDirty(false);
+            setCreated(record);
+          }}
+          footer={({ isSaving, canSubmit }) => (
+            <WizardFooter>
+              <div>
+                {prevStep ? (
                   <Button
-                    key="next"
                     type="button"
-                    disabled={!canSubmit}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      goToStep(nextStep.id);
-                    }}
-                    data-testid={E2eTestId.AgentSetupNextButton}
+                    variant="outline"
+                    disabled={isSaving}
+                    onClick={() => goToStep(prevStep.id)}
                   >
-                    <span>{nextStep.title}</span>
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowLeft className="h-4 w-4" />
+                    <span>{prevStep.title}</span>
+                  </Button>
+                ) : catalogEnabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedTemplate(null);
+                      setSourceSelected(false);
+                      setStep(steps[0].id);
+                    }}
+                    disabled={isSaving}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Catalog
                   </Button>
                 ) : (
                   <Button
-                    key="create"
-                    type="submit"
-                    disabled={!canSubmit}
-                    data-testid={E2eTestId.AgentSetupSubmitButton}
+                    type="button"
+                    variant="outline"
+                    onClick={guard.requestClose}
+                    disabled={isSaving}
                   >
-                    {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                    <span>
-                      {isSaving ? "Creating..." : `Create ${config.singular}`}
-                    </span>
+                    Cancel
                   </Button>
                 )}
-              </WizardFooter>
-            )}
-          />
-        </>
+              </div>
+              {nextStep ? (
+                // Moving on needs what a create would need of this step (a
+                // name, a complete visibility choice), so the last step is
+                // never reached with a record that cannot be created.
+                //
+                // Keyed apart from the Create button, and with the default
+                // action stopped: the step change re-renders this slot as
+                // the submit button while the click is still dispatching,
+                // and a reused DOM button would then submit the form.
+                <Button
+                  key="next"
+                  type="button"
+                  disabled={!canSubmit}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    goToStep(nextStep.id);
+                  }}
+                  data-testid={E2eTestId.AgentSetupNextButton}
+                >
+                  <span>{nextStep.title}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  key="create"
+                  type="submit"
+                  disabled={!canSubmit}
+                  data-testid={E2eTestId.AgentSetupSubmitButton}
+                >
+                  {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <span>
+                    {isSaving ? "Creating..." : `Create ${config.singular}`}
+                  </span>
+                </Button>
+              )}
+            </WizardFooter>
+          )}
+        />
       )}
 
       <UnsavedChangesDialog

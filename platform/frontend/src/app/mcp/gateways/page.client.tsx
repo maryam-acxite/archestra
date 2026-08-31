@@ -42,7 +42,11 @@ import { BulkVisibilityDialog } from "@/components/bulk-visibility-dialog";
 import { CloneAgentDialog } from "@/components/clone-agent-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { ExternalDocsLink } from "@/components/external-docs-link";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { PageLayout } from "@/components/page-layout";
 import { PERMANENT_DELETE_LABEL } from "@/components/permanent-delete";
 import { PermissionRequirementHint } from "@/components/permission-requirement-hint";
@@ -371,7 +375,7 @@ function McpGateways({
   const filterSignature = JSON.stringify(listFilters);
   const [escalatedFor, setEscalatedFor] = useState<string | null>(null);
   const allMatchingSelected = escalatedFor === filterSignature;
-  const { effectiveRowSelection, onRowSelectionChange } =
+  const { effectiveRowSelection, onRowSelectionChange, rangeSelection } =
     useControlledRowSelection({
       rowSelection,
       setRowSelection,
@@ -385,6 +389,7 @@ function McpGateways({
     getRowId: (row) => row.id,
     rowSelection: effectiveRowSelection,
     setRowSelection: onRowSelectionChange,
+    rangeSelection,
   });
   const { data: allMatching, isFetching: isFetchingAllMatching } =
     useAllMatchingProfiles(listFilters, { enabled: allMatchingSelected });
@@ -685,8 +690,9 @@ function McpGateways({
       <TableCardView storageKey="archestra-mcp-gateways-view">
         <div>
           <div>
-            <div className="mb-3 flex flex-col gap-2">
+            <CollectionFilters>
               <FilterBar
+                leading
                 actions={!isDeletedView ? <TableCardViewToggle /> : undefined}
               >
                 <SearchInput
@@ -712,7 +718,7 @@ function McpGateways({
                 />
               )}
               <ActiveFilterBadges adminPermission={{ mcpGateway: ["admin"] }} />
-            </div>
+            </CollectionFilters>
 
             <div data-testid={E2eTestId.AgentsTable}>
               <BulkActions
@@ -801,6 +807,14 @@ function McpGateways({
                         }
                         description={agent.description}
                         actions={renderGatewayActions(agent)}
+                        onNavigate={
+                          isDeletedView
+                            ? undefined
+                            : () =>
+                                router.push(
+                                  agentDetailHref("mcp_gateway", agent.id),
+                                )
+                        }
                         {...cardSelection(agent)}
                         selectionLabel={`Select ${agent.name}`}
                         footer={
@@ -831,6 +845,7 @@ function McpGateways({
                     getRowId={(row) => row.id}
                     rowSelection={effectiveRowSelection}
                     onRowSelectionChange={onRowSelectionChange}
+                    rangeSelection={rangeSelection}
                     hideSelectedCount
                     sorting={sorting}
                     onSortingChange={handleSortingChange}

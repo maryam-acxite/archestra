@@ -26,6 +26,7 @@ import { CreateLlmProviderApiKeyDialog } from "@/components/create-llm-provider-
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { ExternalDocsLink } from "@/components/external-docs-link";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -49,6 +50,7 @@ import { TableRowActions } from "@/components/table-row-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -92,7 +94,6 @@ import {
 import { useOrganization } from "@/lib/organization.query";
 import { cn } from "@/lib/utils";
 import { useAllVirtualApiKeys } from "@/lib/virtual-api-keys.query";
-import { MODEL_NAV_TABS } from "../model-nav-tabs";
 import {
   buildSubscriptionOffers,
   type SubscriptionOffer,
@@ -374,6 +375,36 @@ export default function ApiKeysPage() {
     [allApiKeys, providerCatalog],
   );
 
+  // Catalog flows can land here with a specific missing subscription. Open
+  // that exact self-service sign-in once the current user's credentials have
+  // resolved, then consume the query parameter so closing the dialog stays
+  // closed. A connected subscription never opens a duplicate create flow.
+  const subscriptionKindToConnect = searchParams.get("connect");
+  useEffect(() => {
+    if (
+      !subscriptionKindToConnect ||
+      subscriptionToConnect ||
+      permissionsPending ||
+      (apiKeyQueriesEnabled && allApiKeysPending)
+    ) {
+      return;
+    }
+    const offer = subscriptionOffers.find(
+      ({ kind, credential }) =>
+        kind === subscriptionKindToConnect && credential === null,
+    );
+    updateQueryParams({ connect: null });
+    if (offer) setSubscriptionToConnect(offer);
+  }, [
+    allApiKeysPending,
+    apiKeyQueriesEnabled,
+    permissionsPending,
+    subscriptionKindToConnect,
+    subscriptionOffers,
+    subscriptionToConnect,
+    updateQueryParams,
+  ]);
+
   /** Keys the cards already stand for, so the table never repeats them. */
   const connectedSubscriptionIds = useMemo(
     () =>
@@ -654,7 +685,6 @@ export default function ApiKeysPage() {
     <PageLayout
       title="Model Providers"
       description="Connect credentials for the LLM providers used in Chat and the LLM Proxy."
-      tabs={MODEL_NAV_TABS}
       actionButton={addApiKeyButton}
     >
       <div className="space-y-4">
@@ -685,90 +715,94 @@ export default function ApiKeysPage() {
           </p>
         </div>
 
-        <FilterBar className="!mb-3">
-          <SearchInput
-            isLoading={isFetching}
-            objectNamePlural="credentials"
-            searchFields={["name"]}
-            paramName="search"
-            className={filterSearchClass}
-          />
-          <Select
-            value={providerFilter}
-            onValueChange={(value) =>
-              updateQueryParams({
-                provider: value === "all" ? null : value,
-              })
-            }
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Filter by provider"
-              className={filterControlClass({
-                active: providerFilter !== "all",
-              })}
-            >
-              <SelectValue placeholder="All providers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All providers</SelectItem>
-              <LlmProviderSelectItems options={providerOptions} />
-            </SelectContent>
-          </Select>
-        </FilterBar>
+        <BulkActionsScope>
+          <CollectionFilters>
+            <FilterBar>
+              <SearchInput
+                isLoading={isFetching}
+                objectNamePlural="credentials"
+                searchFields={["name"]}
+                paramName="search"
+                className={filterSearchClass}
+              />
+              <Select
+                value={providerFilter}
+                onValueChange={(value) =>
+                  updateQueryParams({
+                    provider: value === "all" ? null : value,
+                  })
+                }
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Filter by provider"
+                  className={filterControlClass({
+                    active: providerFilter !== "all",
+                  })}
+                >
+                  <SelectValue placeholder="All providers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All providers</SelectItem>
+                  <LlmProviderSelectItems options={providerOptions} />
+                </SelectContent>
+              </Select>
+            </FilterBar>
+          </CollectionFilters>
 
-        {byosEnabled &&
-          apiKeys.some((key) => key.secretStorageType === "database") && (
-            <Alert variant="destructive" className="!mb-3">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Database-stored API keys detected</AlertTitle>
-              <AlertDescription>
-                External Vault storage is enabled, but some of your API keys are
-                still stored in the database. To migrate them to the vault,
-                delete them and create new ones with vault references.
-              </AlertDescription>
-            </Alert>
-          )}
+          {byosEnabled &&
+            apiKeys.some((key) => key.secretStorageType === "database") && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Database-stored API keys detected</AlertTitle>
+                <AlertDescription>
+                  External Vault storage is enabled, but some of your API keys
+                  are still stored in the database. To migrate them to the
+                  vault, delete them and create new ones with vault references.
+                </AlertDescription>
+              </Alert>
+            )}
 
-        <div data-testid={E2eTestId.ChatApiKeysTable}>
-          <BulkActions
-            count={selectedApiKeys.length}
-            noun="API key"
-            onClear={clearSelection}
-            busy={bulkDeleteMutation.isPending}
-            selectAllMatching={selectAllMatching}
-          >
-            <PermissionButton
-              permissions={{ llmProviderApiKey: ["delete"] }}
-              variant="destructive"
-              size="sm"
-              onClick={() => setIsBulkDeleteDialogOpen(true)}
+          <div data-testid={E2eTestId.ChatApiKeysTable}>
+            <BulkActions
+              count={selectedApiKeys.length}
+              noun="API key"
+              onClear={clearSelection}
+              busy={bulkDeleteMutation.isPending}
+              selectAllMatching={selectAllMatching}
             >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete</span>
-            </PermissionButton>
-          </BulkActions>
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowId={(row) => row.id}
-            rowSelection={rowSelection}
-            onRowSelectionChange={setRowSelection}
-            onPageRowIdsChange={onPageRowIdsChange}
-            hideSelectedCount
-            isLoading={permissionsPending || isFetching}
-            emptyIcon={Boxes}
-            emptyMessage="No credentials configured"
-            hasActiveFilters={Boolean(search || providerFilter !== "all")}
-            filteredEmptyMessage="No LLM provider credentials match your filters"
-            onClearFilters={() =>
-              updateQueryParams({
-                search: null,
-                provider: null,
-              })
-            }
-          />
-        </div>
+              <PermissionButton
+                permissions={{ llmProviderApiKey: ["delete"] }}
+                variant="destructive"
+                size="sm"
+                onClick={() => setIsBulkDeleteDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete</span>
+              </PermissionButton>
+            </BulkActions>
+            <DataTable
+              columns={columns}
+              data={rows}
+              getRowId={(row) => row.id}
+              rowSelection={rowSelection}
+              onRowSelectionChange={setRowSelection}
+              onPageRowIdsChange={onPageRowIdsChange}
+              hideSelectedCount
+              isLoading={permissionsPending || isFetching}
+              emptyIcon={Boxes}
+              emptyMessage="No credentials configured"
+              hasActiveFilters={Boolean(search || providerFilter !== "all")}
+              filteredEmptyMessage="No LLM provider credentials match your filters"
+              onClearFilters={() =>
+                updateQueryParams({
+                  search: null,
+                  provider: null,
+                })
+              }
+            />
+          </div>
+        </BulkActionsScope>
 
         {/* Create Dialog */}
         <CreateLlmProviderApiKeyDialog
@@ -998,7 +1032,7 @@ function DeleteApiKeyDescription({
             <p className="font-medium">OAuth clients</p>
             <Link
               className="text-primary underline-offset-4 hover:underline"
-              href={`/llm/proxy/oauth-clients?providerApiKeyId=${apiKey.id}`}
+              href={`/settings/oauth-clients?type=llm&providerApiKeyId=${apiKey.id}`}
             >
               View all
             </Link>

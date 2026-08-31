@@ -11,10 +11,12 @@ import {
   Library,
   Lock,
   MessageSquare,
+  MessagesSquare,
   Palette,
   Plug,
   PlugZap,
   ShieldCheck,
+  ShieldUser,
   UserCog,
   Users,
   UsersRound,
@@ -42,8 +44,26 @@ export function useSettingsTabs() {
           },
         ]
       : []),
+    ...(permissionMap?.["/settings/oauth-clients"]
+      ? [
+          {
+            label: "OAuth Clients",
+            href: "/settings/oauth-clients",
+            Icon: ShieldUser,
+          },
+        ]
+      : []),
     ...(permissionMap?.["/settings/agents"]
       ? [{ label: "Agents", href: "/settings/agents", Icon: MessageSquare }]
+      : []),
+    ...(permissionMap?.["/settings/messaging-channels"]
+      ? [
+          {
+            label: "Messaging Channels",
+            href: "/settings/messaging-channels",
+            Icon: MessagesSquare,
+          },
+        ]
       : []),
     ...(permissionMap?.["/settings/llm"]
       ? [{ label: "LLM", href: "/settings/llm", Icon: Brain }]

@@ -9,11 +9,12 @@ import {
 } from "@archestra/shared";
 import { CheckCircle2, Route, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -30,6 +31,10 @@ import {
   OAuthConfirmationDialog,
   type OAuthInstallResult,
 } from "@/components/oauth-confirmation-dialog";
+import {
+  ResourceScopeFilter,
+  useScopeFilterParams,
+} from "@/components/resource-scope-filter";
 import { SearchInput } from "@/components/search-input";
 import {
   TableCardGrid,
@@ -50,6 +55,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { PermissionButton } from "@/components/ui/permission-button";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { useHasPermissions, useSession } from "@/lib/auth/auth.query";
 import { useInitiateOAuth } from "@/lib/auth/oauth.query";
 import {
@@ -84,13 +90,13 @@ import {
 } from "@/lib/mcp/mcp-server.query";
 import {
   attentionCatalogIds,
+  attentionSortRank,
   facetIssues,
   type McpServerAttentionFacet,
   type McpServerIssue,
 } from "@/lib/mcp/mcp-server-issues";
 import { buildRemoteInstallCredentialPayload } from "@/lib/mcp/remote-install-payload";
 import { useMcpServerIssues } from "@/lib/mcp/use-mcp-server-issues";
-import { useDefaultEnvironment } from "@/lib/organization.query";
 
 import { resolveCatalogEnvironmentLabel } from "./catalog-environment-label";
 import {
@@ -98,6 +104,11 @@ import {
   type LocalServerInstallResult,
 } from "./local-server-install-dialog";
 import { ManageUsersDialog } from "./manage-users-dialog";
+import {
+  hasMcpRegistryInstallForViewer,
+  matchesMcpRegistryOwnershipFilters,
+  mcpRegistryInstallPriority,
+} from "./mcp-registry-visibility";
 import { McpServerAttentionList } from "./mcp-server-attention-list";
 import {
   type CatalogItem,
@@ -119,6 +130,7 @@ import {
   RegistryFilterDropdown,
   type RegistryFilters,
   RegistrySortMenu,
+  SORT_OPTIONS,
   type SortKey,
   STATUS_OPTIONS,
   selectedAttentionFacet,
@@ -143,6 +155,7 @@ export function InternalMCPCatalog({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const ownershipFilters = useScopeFilterParams();
 
   // Get search query from URL
   const searchQueryFromUrl = searchParams.get("search") || "";
@@ -185,12 +198,20 @@ export function InternalMCPCatalog({
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
   const { data: environmentList } = useEnvironments();
-  const defaultEnvironment = useDefaultEnvironment();
   const byosEnabled = Boolean(useFeature("byosEnabled"));
   const alertingFeature = useFeature("mcpServerAlertingEnabled");
   const alertingEnabled = alertingFeature === true;
 
-  const [sort, setSort] = useState<SortKey>("name-asc");
+  const [sort, setSort] = useState<SortKey>("attention");
+  const sortOptions =
+    alertingFeature === false
+      ? SORT_OPTIONS.filter((option) => option.key !== "attention")
+      : SORT_OPTIONS;
+  useEffect(() => {
+    if (alertingFeature === false && sort === "attention") {
+      setSort("name-asc");
+    }
+  }, [alertingFeature, sort]);
   // The filters live in the URL, not in component state: the sidebar badge
   // and the retired `?tab=attention` links both have to be able to point at a
   // filtered list, and Back has to undo a filter change rather than leave the
@@ -211,9 +232,9 @@ export function InternalMCPCatalog({
         for (const value of next[group]) params.append(group, value);
       }
       const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      replaceRegistryListUrl(qs ? `${pathname}?${qs}` : pathname);
     },
-    [searchParams, router, pathname],
+    [searchParams, pathname],
   );
   const toggleFilter = useCallback(
     (group: FilterGroup, value: string) => {
@@ -233,8 +254,8 @@ export function InternalMCPCatalog({
     [filters, writeFilters],
   );
   // "Clear all" sits under the chips and clears what the chips show. The
-  // facet is not one of them (it is spelled out on the segmented control), so
-  // taking it here would undo a selection the button never claimed to hold.
+  // facet is view state rather than one of those chips, so taking it here
+  // would undo a selection the button never claimed to hold.
   const clearAdvancedFilters = useCallback(
     () =>
       writeFilters({
@@ -282,9 +303,9 @@ export function InternalMCPCatalog({
       } else {
         params.delete("search");
       }
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      replaceRegistryListUrl(`${pathname}?${params.toString()}`);
     },
-    [searchParams, router, pathname],
+    [searchParams, pathname],
   );
   const [selectedCatalogItem, setSelectedCatalogItem] =
     useState<CatalogItem | null>(null);
@@ -579,65 +600,8 @@ export function InternalMCPCatalog({
   };
 
   // Aggregate all installations of the same catalog item
-  const getAggregatedInstallation = (catalogId: string) => {
-    const servers = installedServers?.filter(
-      (server) => server.catalogId === catalogId,
-    );
-
-    if (!servers || servers.length === 0) return undefined;
-
-    // If only one server, return it as-is
-    if (servers.length === 1) {
-      return servers[0];
-    }
-
-    // Find current user's specific installation to use as base
-    const currentUserServer = servers.find((s) => s.ownerId === currentUserId);
-
-    // Prefer current user's server as base, otherwise use first server with users, or just first server
-    const baseServer =
-      currentUserServer ||
-      servers.find((s) => s.users && s.users.length > 0) ||
-      servers[0];
-
-    // Aggregate multiple servers
-    const aggregated = { ...baseServer };
-
-    // Combine all unique users
-    const allUsers = new Set<string>();
-    const allUserDetails: Array<{
-      userId: string;
-      email: string;
-      createdAt: string;
-      serverId: string; // Track which server this user belongs to
-    }> = [];
-
-    for (const server of servers) {
-      if (server.users) {
-        for (const userId of server.users) {
-          allUsers.add(userId);
-        }
-      }
-      if (server.userDetails) {
-        for (const userDetail of server.userDetails) {
-          // Only add if not already present
-          if (!allUserDetails.some((ud) => ud.userId === userDetail.userId)) {
-            allUserDetails.push({
-              ...userDetail,
-              serverId: server.id, // Include the actual server ID
-            });
-          }
-        }
-      }
-    }
-
-    aggregated.users = Array.from(allUsers);
-    aggregated.userDetails = allUserDetails;
-    // Note: teamDetails is now a single object per server (many-to-one),
-    // so we use the base server's teamDetails as-is
-
-    return aggregated;
-  };
+  const getAggregatedInstallation = (catalogId: string) =>
+    aggregatedInstallationsByCatalog.get(catalogId);
 
   const handleReinstall = async (
     catalogItem: CatalogItem,
@@ -878,6 +842,36 @@ export function InternalMCPCatalog({
       ),
     [installedServers],
   );
+  const serversByCatalog = useMemo(() => {
+    const map = new Map<string, InstalledServer[]>();
+    for (const server of installedServers ?? []) {
+      if (!server.catalogId) continue;
+      map.set(server.catalogId, [...(map.get(server.catalogId) ?? []), server]);
+    }
+    return map;
+  }, [installedServers]);
+  const aggregatedInstallationsByCatalog = useMemo(
+    () =>
+      new Map(
+        [...serversByCatalog].map(([catalogId, servers]) => [
+          catalogId,
+          aggregateInstallations(servers, currentUserId),
+        ]),
+      ),
+    [serversByCatalog, currentUserId],
+  );
+  const installedForViewerCatalogIds = useMemo(
+    () =>
+      new Set(
+        (installedServers ?? [])
+          .filter((server) =>
+            hasMcpRegistryInstallForViewer([server], currentUserId),
+          )
+          .map((server) => server.catalogId)
+          .filter(Boolean) as string[],
+      ),
+    [installedServers, currentUserId],
+  );
   const envLabelByCatalog = useMemo(() => {
     const envs = environmentList?.environments ?? [];
     const map = new Map<string, string | null>();
@@ -889,12 +883,11 @@ export function InternalMCPCatalog({
           : (resolveCatalogEnvironmentLabel({
               environmentId: it.environmentId,
               environments: envs,
-              defaultEnvironmentName: defaultEnvironment.name,
-            }) ?? defaultEnvironment.name),
+            }) ?? null),
       );
     }
     return map;
-  }, [catalogItems, environmentList, defaultEnvironment.name]);
+  }, [catalogItems, environmentList]);
 
   const environmentOptions: FilterOption[] = useMemo(() => {
     const set = new Set<string>();
@@ -943,6 +936,16 @@ export function InternalMCPCatalog({
     [issuesByCatalog, selectedFacet],
   );
   const matchesAdvancedFilters = (item: CatalogItem) => {
+    if (
+      !matchesMcpRegistryOwnershipFilters({
+        item,
+        servers: serversByCatalog.get(item.id) ?? [],
+        filters: ownershipFilters,
+        currentUserId,
+      })
+    ) {
+      return false;
+    }
     if (facetCatalogIds && !facetCatalogIds.has(item.id)) return false;
     if (filters.issue.size > 0) {
       const itemIssues = issuesByCatalog.get(item.id) ?? [];
@@ -975,6 +978,15 @@ export function InternalMCPCatalog({
 
   const sortItems = (list: CatalogItem[]) => {
     switch (sort) {
+      case "attention":
+        return [...list].sort(
+          (a, b) =>
+            attentionSortRank(issuesByCatalog.get(a.id)) -
+              attentionSortRank(issuesByCatalog.get(b.id)) ||
+            Number(installedForViewerCatalogIds.has(b.id)) -
+              Number(installedForViewerCatalogIds.has(a.id)) ||
+            a.name.localeCompare(b.name),
+        );
       case "name-desc":
         return [...list].sort((a, b) => b.name.localeCompare(a.name));
       case "newest":
@@ -1013,24 +1025,23 @@ export function InternalMCPCatalog({
       .filter((item) => item.id !== ARCHESTRA_MCP_CATALOG_ID)
       .filter(matchesAdvancedFilters),
   );
-  const personalItems = allFilteredItems.filter(
-    (item) => item.scope === "personal",
-  );
-  const sharedItems = allFilteredItems.filter(
-    (item) => item.scope !== "personal",
-  );
 
-  const getInstalledServerInfo = (item: CatalogItem) => {
+  function getInstalledServerInfo(item: CatalogItem) {
     const installedServer = getAggregatedInstallation(item.id);
     const isInstallInProgress =
       installedServer && installingServerIds.has(installedServer.id);
 
     // For local servers, count installations and check ownership
-    const localServers =
-      installedServers?.filter(
-        (server) =>
-          server.serverType === "local" && server.catalogId === item.id,
-      ) || [];
+    const catalogServers = serversByCatalog.get(item.id) ?? [];
+    const localServers = catalogServers.filter(
+      (server) => server.serverType === "local",
+    );
+    const currentUserHasPersonalInstallation = Boolean(
+      currentUserId &&
+        catalogServers.some(
+          (server) => server.ownerId === currentUserId && !server.teamId,
+        ),
+    );
     const currentUserLocalServerInstallation = currentUserId
       ? localServers.find((server) => server.ownerId === currentUserId)
       : undefined;
@@ -1042,8 +1053,9 @@ export function InternalMCPCatalog({
       installedServer,
       isInstallInProgress,
       currentUserInstalledLocalServer,
+      currentUserHasPersonalInstallation,
     };
-  };
+  }
 
   // Install entry point for the table view, which has no per-variant card
   // buttons: route to the same flows the cards use.
@@ -1069,17 +1081,17 @@ export function InternalMCPCatalog({
       } else {
         params.delete("labels");
       }
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      replaceRegistryListUrl(`${pathname}?${params.toString()}`);
     },
-    [parsedLabels, searchParams, router, pathname],
+    [parsedLabels, searchParams, pathname],
   );
 
   const handleClearFilters = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("search");
     params.delete("labels");
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [searchParams, router, pathname]);
+    replaceRegistryListUrl(`${pathname}?${params.toString()}`);
+  }, [searchParams, pathname]);
 
   // Everything except the facet. Offered when a facet is selected and the
   // other filters have emptied it: the reader asked "what needs my action",
@@ -1096,12 +1108,14 @@ export function InternalMCPCatalog({
       params.append(REGISTRY_STATUS_PARAM, value);
     }
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [searchParams, router, pathname, filters.status]);
+    replaceRegistryListUrl(qs ? `${pathname}?${qs}` : pathname);
+  }, [searchParams, pathname, filters.status]);
 
   const hasLabelFilters = parsedLabels && Object.keys(parsedLabels).length > 0;
   const hasActiveFilters = Boolean(
-    searchQueryFromUrl.trim() || hasLabelFilters,
+    ownershipFilters.hasActiveScopeFilters ||
+      searchQueryFromUrl.trim() ||
+      hasLabelFilters,
   );
   // A selected attention facet is the list's current view, not an applied
   // control within the bar. Keep it in place when clearing the narrower
@@ -1113,20 +1127,17 @@ export function InternalMCPCatalog({
     filters.author.size > 0 ||
     filters.status.has(INSTALLED_STATUS_VALUE) ||
     filters.status.has(NOT_INSTALLED_STATUS_VALUE);
-  const hasFilterChips =
-    filters.issue.size > 0 ||
-    filters.environment.size > 0 ||
-    filters.author.size > 0 ||
-    filters.status.has(INSTALLED_STATUS_VALUE) ||
-    filters.status.has(NOT_INSTALLED_STATUS_VALUE);
   const handleClearAllFilters = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("search");
     params.delete("labels");
     for (const group of FILTER_GROUPS) params.delete(group);
+    for (const group of ["scope", "teamIds", "authorIds", "excludeAuthorIds"]) {
+      params.delete(group);
+    }
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [searchParams, router, pathname]);
+    replaceRegistryListUrl(qs ? `${pathname}?${qs}` : pathname);
+  }, [searchParams, pathname]);
   const handleClearBarFilters = selectedFacet
     ? clearFiltersKeepingFacet
     : handleClearAllFilters;
@@ -1149,21 +1160,20 @@ export function InternalMCPCatalog({
 
   return (
     <TableCardView storageKey="archestra-mcp-registry-view" defaultMode="table">
-      <div className="space-y-4">
-        <div
-          className={
-            !hasLabelFilters && !hasFilterChips
-              ? "space-y-3 !mb-3"
-              : "space-y-3"
-          }
-        >
+      <div>
+        <CollectionFilters>
           <FilterBar
+            leading
             onClearFilters={
               hasAppliedBarFilters ? handleClearBarFilters : undefined
             }
             actions={
               <>
-                <RegistrySortMenu value={sort} onChange={setSort} />
+                <RegistrySortMenu
+                  value={sort}
+                  onChange={setSort}
+                  options={sortOptions}
+                />
                 {!selectedFacet && (
                   <TableCardViewToggle order={["table", "cards"]} />
                 )}
@@ -1176,11 +1186,19 @@ export function InternalMCPCatalog({
               value={searchQueryFromUrl}
               onSearchChange={handleSearchChange}
               syncQueryParams={false}
-              debounceMs={300}
+              debounceMs={0}
               className={filterSearchClass}
               inputClassName="w-full bg-background/50 backdrop-blur-sm border-border/50 focus:border-primary/50 transition-colors pl-9"
             />
             <McpCatalogLabelFilter active={Boolean(hasLabelFilters)} />
+            {!selectedFacet && (
+              <ResourceScopeFilter
+                adminPermission={{ mcpServerInstallation: ["admin"] }}
+                ownerLabelPlural="connections"
+                allLabel="All scopes"
+                navigate={replaceRegistryListUrl}
+              />
+            )}
             {selectedFacet ? (
               <RegistryFilterDropdown
                 label="Issue"
@@ -1228,18 +1246,15 @@ export function InternalMCPCatalog({
               />
             )}
           </FilterBar>
-        </div>
-        {hasLabelFilters && (
-          <div className={!hasFilterChips ? "!mb-3" : undefined}>
+          {hasLabelFilters && (
             <LabelFilterBadges onRemoveLabel={handleRemoveLabel} />
-          </div>
-        )}
-        <RegistryFilterChips
-          className="!mb-3"
-          selected={filters}
-          onRemove={removeFilter}
-          onClearAll={clearAdvancedFilters}
-        />
+          )}
+          <RegistryFilterChips
+            selected={filters}
+            onRemove={removeFilter}
+            onClearAll={clearAdvancedFilters}
+          />
+        </CollectionFilters>
         {selectedFacet ? (
           allFilteredItems.length === 0 ? (
             // A clean fleet is only claimable when the facet itself is empty.
@@ -1305,10 +1320,9 @@ export function InternalMCPCatalog({
           )
         ) : (
           <div className="space-y-6">
-            {personalItems.length > 0 && (
+            {allFilteredItems.length > 0 ? (
               <McpServerCatalogSection
-                title="Personal"
-                items={personalItems}
+                items={allFilteredItems}
                 getServerInfo={getInstalledServerInfo}
                 envLabelByCatalog={envLabelByCatalog}
                 issuesByCatalog={issuesByCatalog}
@@ -1319,40 +1333,19 @@ export function InternalMCPCatalog({
                 onReinstall={handleReinstall}
                 onCancelInstallation={install.cancelInstallation}
                 isBuiltInPlaywright={isPlaywrightCatalogItem}
-                showTitle
-              />
-            )}
-
-            {sharedItems.length > 0 ? (
-              <McpServerCatalogSection
-                title="Shared"
-                items={sharedItems}
-                getServerInfo={getInstalledServerInfo}
-                envLabelByCatalog={envLabelByCatalog}
-                issuesByCatalog={issuesByCatalog}
-                deploymentFeedState={deploymentFeedState}
-                deploymentStatuses={deploymentStatuses}
-                installingItemId={installingItemId}
-                onInstall={handleTableInstall}
-                onReinstall={handleReinstall}
-                onCancelInstallation={install.cancelInstallation}
-                isBuiltInPlaywright={isPlaywrightCatalogItem}
-                showTitle={personalItems.length > 0}
               />
             ) : (
-              personalItems.length === 0 && (
-                <EmptyState
-                  icon={Route}
-                  title={
-                    hasActiveFilters
-                      ? "No MCP servers match your filters"
-                      : "No MCP servers found"
-                  }
-                  onClearFilters={
-                    hasActiveFilters ? handleClearFilters : undefined
-                  }
-                />
-              )
+              <EmptyState
+                icon={Route}
+                title={
+                  hasActiveFilters
+                    ? "No MCP servers match your filters"
+                    : "No MCP servers found"
+                }
+                onClearFilters={
+                  hasActiveFilters ? handleClearFilters : undefined
+                }
+              />
             )}
           </div>
         )}
@@ -1457,8 +1450,11 @@ export function InternalMCPCatalog({
   );
 }
 
+function replaceRegistryListUrl(url: string) {
+  window.history.replaceState(null, "", url);
+}
+
 function McpServerCatalogSection({
-  title,
   items,
   getServerInfo,
   envLabelByCatalog,
@@ -1470,13 +1466,12 @@ function McpServerCatalogSection({
   onReinstall,
   onCancelInstallation,
   isBuiltInPlaywright,
-  showTitle,
 }: {
-  title: string;
   items: CatalogItem[];
   getServerInfo: (item: CatalogItem) => {
     installedServer?: InstalledServer;
     isInstallInProgress?: boolean;
+    currentUserHasPersonalInstallation: boolean;
   };
   envLabelByCatalog: Map<string, string | null>;
   issuesByCatalog: Map<string, McpServerIssue[]>;
@@ -1491,12 +1486,18 @@ function McpServerCatalogSection({
   ) => void | Promise<void>;
   onCancelInstallation: (serverId: string) => void;
   isBuiltInPlaywright: (catalogId: string) => boolean;
-  showTitle: boolean;
 }) {
-  const canSelect = (item: CatalogItem) =>
-    !!getServerInfo(item).installedServer &&
-    installingItemId !== item.id &&
-    !getServerInfo(item).isInstallInProgress;
+  const canSelect = (item: CatalogItem) => {
+    const serverInfo = getServerInfo(item);
+    return (
+      !!serverInfo.installedServer &&
+      installingItemId !== item.id &&
+      !serverInfo.isInstallInProgress
+    );
+  };
+  const filterSignature = `mcp-registry:${items
+    .map((item) => item.id)
+    .join(",")}`;
   const {
     rowSelection,
     setRowSelection,
@@ -1504,35 +1505,105 @@ function McpServerCatalogSection({
     clearSelection,
     selected,
     selectAllMatching,
+    rangeSelection,
   } = useBulkSelection({
     rows: items,
     getId: (item) => item.id,
     canSelect,
-    filterSignature: `mcp-registry:${items.map((item) => item.id).join(",")}`,
+    filterSignature,
     matchDescription: "match the current filters",
   });
+  const selectedToUninstall = selected
+    .map((item) => ({ item, server: getServerInfo(item).installedServer }))
+    .filter((entry) => entry.server)
+    .map(({ item, server }) => ({
+      id: server?.id ?? item.id,
+      name: item.name,
+    }));
+
+  // Table and cards consume the same filtered and sorted sequence. Do not add
+  // a card-only priority bucket: it would override the user's active sort.
+  const orderedCardItems = items;
+  const [cardPagination, setCardPagination] = useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+  const maxCardPageIndex = Math.max(
+    0,
+    Math.ceil(orderedCardItems.length / cardPagination.pageSize) - 1,
+  );
+  const cardPageIndex = Math.min(cardPagination.pageIndex, maxCardPageIndex);
+  const cardPageItems = orderedCardItems.slice(
+    cardPageIndex * cardPagination.pageSize,
+    (cardPageIndex + 1) * cardPagination.pageSize,
+  );
   const cardSelection = useBulkCardSelection({
-    rows: items,
+    rows: cardPageItems,
     getRowId: (item) => item.id,
     rowSelection,
     setRowSelection,
     canSelect,
+    rangeSelection,
   });
+  const tablePageRowIds = useRef<string[]>([]);
+  const cardPageRowIds = useRef<string[]>([]);
+  const recordTablePageRowIds = useCallback((ids: string[]) => {
+    tablePageRowIds.current = ids;
+  }, []);
+  const recordCardPageRowIds = useCallback((ids: string[]) => {
+    cardPageRowIds.current = ids;
+  }, []);
+  const syncVisiblePageSelection = useCallback(
+    (mode: "cards" | "table") => {
+      // With no selection there is no page-selection affordance to update.
+      // Skipping this state write keeps the view toggle a CSS-only operation.
+      if (selected.length === 0) return;
+      onPageRowIdsChange(
+        mode === "cards" ? cardPageRowIds.current : tablePageRowIds.current,
+      );
+    },
+    [onPageRowIdsChange, selected.length],
+  );
 
-  const selectedToUninstall = selected
-    .filter((item) => getServerInfo(item).installedServer)
-    .map((item) => ({
-      id: getServerInfo(item).installedServer?.id ?? item.id,
-      name: item.name,
-    }));
+  const renderCard = (item: CatalogItem) => {
+    const serverInfo = getServerInfo(item);
+    return (
+      <McpServerCard
+        variant={
+          item.serverType === "builtin"
+            ? "builtin"
+            : item.serverType === "remote"
+              ? "remote"
+              : "local"
+        }
+        key={item.id}
+        item={item}
+        installedServer={serverInfo.installedServer}
+        installingItemId={installingItemId}
+        installationStatus={
+          serverInfo.installedServer?.localInstallationStatus || undefined
+        }
+        deploymentStatuses={deploymentStatuses}
+        deploymentFeedState={deploymentFeedState}
+        issues={issuesByCatalog.get(item.id)}
+        onInstallRemoteServer={() => onInstall(item)}
+        onInstallLocalServer={() => onInstall(item)}
+        onReinstall={(flagged, options) => onReinstall(item, flagged, options)}
+        onCancelInstallation={onCancelInstallation}
+        isBuiltInPlaywright={isBuiltInPlaywright(item.id)}
+        selection={{
+          ...cardSelection(item),
+          disabled: !canSelect(item),
+          disabledTooltip: !serverInfo.installedServer
+            ? "Install this server before selecting it"
+            : "Wait for installation to finish",
+        }}
+      />
+    );
+  };
 
   return (
     <div className="space-y-3">
-      {showTitle && (
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          {title}
-        </h3>
-      )}
       <McpServerBulkActions
         selected={selected}
         selectedToUninstall={selectedToUninstall}
@@ -1540,6 +1611,7 @@ function McpServerCatalogSection({
         selectAllMatching={selectAllMatching}
       />
       <TableCardViewContent
+        onModeChange={syncVisiblePageSelection}
         table={
           <McpServerTable
             items={items}
@@ -1555,53 +1627,27 @@ function McpServerCatalogSection({
             selection={{
               rowSelection,
               onRowSelectionChange: setRowSelection,
-              onPageRowIdsChange,
+              onPageRowIdsChange: recordTablePageRowIds,
+              rangeSelection,
             }}
           />
         }
         cards={
           <TableCardSelectionScope
-            rowIds={items.filter(canSelect).map((item) => item.id)}
-            onVisibleRowIdsChange={onPageRowIdsChange}
+            rowIds={cardPageItems.filter(canSelect).map((item) => item.id)}
+            onVisibleRowIdsChange={recordCardPageRowIds}
           >
-            <TableCardGrid className={CARD_GRID_CLASS}>
-              {items.map((item) => {
-                const serverInfo = getServerInfo(item);
-                return (
-                  <McpServerCard
-                    variant={
-                      item.serverType === "builtin"
-                        ? "builtin"
-                        : item.serverType === "remote"
-                          ? "remote"
-                          : "local"
-                    }
-                    key={item.id}
-                    item={item}
-                    installedServer={serverInfo.installedServer}
-                    installingItemId={installingItemId}
-                    installationStatus={
-                      serverInfo.installedServer?.localInstallationStatus ||
-                      undefined
-                    }
-                    deploymentStatuses={deploymentStatuses}
-                    deploymentFeedState={deploymentFeedState}
-                    issues={issuesByCatalog.get(item.id)}
-                    onInstallRemoteServer={() => onInstall(item)}
-                    onInstallLocalServer={() => onInstall(item)}
-                    onReinstall={(flagged, options) =>
-                      onReinstall(item, flagged, options)
-                    }
-                    onCancelInstallation={onCancelInstallation}
-                    isBuiltInPlaywright={isBuiltInPlaywright(item.id)}
-                    selection={{
-                      ...cardSelection(item),
-                      disabled: !canSelect(item),
-                    }}
-                  />
-                );
-              })}
-            </TableCardGrid>
+            <div className="space-y-4">
+              <TableCardGrid>{cardPageItems.map(renderCard)}</TableCardGrid>
+              {orderedCardItems.length > cardPagination.pageSize ? (
+                <TablePagination
+                  pageIndex={cardPageIndex}
+                  pageSize={cardPagination.pageSize}
+                  total={orderedCardItems.length}
+                  onPaginationChange={setCardPagination}
+                />
+              ) : null}
+            </div>
           </TableCardSelectionScope>
         }
       />
@@ -1646,7 +1692,8 @@ function McpServerBulkActions({
         >
           <Trash2 className="h-4 w-4" />
           <span>
-            Uninstall{countSuffix(selectedToUninstall.length, selected.length)}
+            Uninstall
+            {countSuffix(selectedToUninstall.length, selected.length)}
           </span>
         </PermissionButton>
       </BulkActions>
@@ -1732,21 +1779,42 @@ function McpCatalogLabelKeyRow({
   );
 }
 
-/**
- * Columns are sized from what a card needs, not from viewport breakpoints. The
- * breakpoints measured the window rather than the space left after the nav, so
- * `lg:grid-cols-3` kept promising three columns while handing each card ~190px
- * — far less than its metadata row (scope badge, tool and agent counts,
- * deployment state, connection avatars) can lay out on one line. Sizing from
- * the content drops a column at those widths instead of squeezing.
- *
- * 19rem: measured against the widest real cards, every one of them fits by
- * 296px and the worst overflows by 1px at 288px, so this floor clears it with
- * a little room for the author name to occupy rather than truncate.
- */
-const CARD_GRID_CLASS =
-  "grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] 2xl:grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]";
-
 function countSuffix(applicable: number, selected: number): string {
   return applicable > 0 && applicable < selected ? ` (${applicable})` : "";
+}
+
+function aggregateInstallations(
+  servers: InstalledServer[],
+  currentUserId: string | undefined,
+): InstalledServer {
+  if (servers.length === 1) return servers[0];
+
+  const baseServer = [...servers].sort(
+    (a, b) =>
+      mcpRegistryInstallPriority(a, currentUserId) -
+      mcpRegistryInstallPriority(b, currentUserId),
+  )[0];
+  const aggregated = { ...baseServer };
+  const allUsers = new Set<string>();
+  const allUserDetails: Array<{
+    userId: string;
+    email: string;
+    createdAt: string;
+    serverId: string;
+  }> = [];
+
+  for (const server of servers) {
+    for (const userId of server.users ?? []) allUsers.add(userId);
+    for (const userDetail of server.userDetails ?? []) {
+      if (
+        !allUserDetails.some((detail) => detail.userId === userDetail.userId)
+      ) {
+        allUserDetails.push({ ...userDetail, serverId: server.id });
+      }
+    }
+  }
+
+  aggregated.users = [...allUsers];
+  aggregated.userDetails = allUserDetails;
+  return aggregated;
 }

@@ -19,7 +19,6 @@ import { type LucideIcon, Search } from "lucide-react";
 import React, { useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -28,6 +27,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { BulkRangeSelectionController } from "@/lib/bulk-range-selection";
+import {
+  registerTableRangeSelection,
+  useBulkRangeSelectionController,
+} from "@/lib/bulk-range-selection-context";
 import { cn } from "@/lib/utils";
 import { DATA_TABLE_SELECT_COLUMN_SIZE } from "./data-table.constants";
 import { DataTablePagination } from "./data-table-pagination";
@@ -55,6 +59,8 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: TData, event: React.MouseEvent) => void;
   rowSelection?: RowSelectionState;
   onRowSelectionChange?: (rowSelection: RowSelectionState) => void;
+  /** Shared with card mode so Shift ranges keep one anchor across layouts. */
+  rangeSelection?: BulkRangeSelectionController;
   /**
    * The ids of the rows currently on screen, whenever they change.
    *
@@ -78,6 +84,8 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: string;
   /** Muted line under `emptyMessage`. */
   emptyDescription?: string;
+  /** Call to action shown only for the unfiltered empty state. */
+  emptyAction?: React.ReactNode;
   /**
    * The page's own icon — pass the one its sidebar entry uses, so the panel
    * reads as part of the page. Defaults to a magnifying glass while filters
@@ -123,6 +131,7 @@ export function DataTable<TData, TValue>({
   onRowClick,
   rowSelection,
   onRowSelectionChange,
+  rangeSelection: controlledRangeSelection,
   onPageRowIdsChange,
   hideSelectedCount,
   getRowId,
@@ -131,6 +140,7 @@ export function DataTable<TData, TValue>({
   isLoading = false,
   emptyMessage = "No results",
   emptyDescription,
+  emptyAction,
   emptyIcon,
   hasActiveFilters = false,
   filteredEmptyMessage = "No results match your filters",
@@ -143,6 +153,8 @@ export function DataTable<TData, TValue>({
   fixedWidthColumnIds = [],
   flexibleColumnIds = [],
 }: DataTableProps<TData, TValue>) {
+  const localRangeSelection = useBulkRangeSelectionController();
+  const rangeSelection = controlledRangeSelection ?? localRangeSelection;
   const [internalSorting, setInternalSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [internalPagination, setInternalPagination] = useState({
@@ -227,6 +239,7 @@ export function DataTable<TData, TValue>({
       }
     },
   });
+  registerTableRangeSelection({ table, controller: rangeSelection });
 
   // With autoResetPageIndex disabled, a shrinking row count (e.g. a filter
   // applied while on a later page) strands the table on a nonexistent page.
@@ -304,7 +317,7 @@ export function DataTable<TData, TValue>({
                     key={headerGroup.id}
                     className="hover:bg-transparent"
                   >
-                    {headerGroup.headers.map((header) => {
+                    {headerGroup.headers.map((header, index) => {
                       const sorted = header.column.getIsSorted();
                       return (
                         <TableHead
@@ -319,7 +332,10 @@ export function DataTable<TData, TValue>({
                                   : "none"
                               : undefined
                           }
-                          className={getColumnClassName(header.column.id)}
+                          className={getColumnClassName(
+                            header.column.id,
+                            headerGroup.headers[index - 1]?.column.id,
+                          )}
                           style={getColumnStyle({
                             columnId: header.column.id,
                             configuredSize: header.column.columnDef.size,
@@ -370,7 +386,7 @@ export function DataTable<TData, TValue>({
                       )}
                       onClick={(e) => onRowClick?.(row.original, e)}
                     >
-                      {row.getVisibleCells().map((cell) => (
+                      {row.getVisibleCells().map((cell, index, cells) => (
                         <TableCell
                           key={cell.id}
                           data-column-id={cell.column.id}
@@ -379,7 +395,10 @@ export function DataTable<TData, TValue>({
                               ? handleSelectCellClick
                               : undefined
                           }
-                          className={getColumnClassName(cell.column.id)}
+                          className={getColumnClassName(
+                            cell.column.id,
+                            cells[index - 1]?.column.id,
+                          )}
                           style={getColumnStyle({
                             columnId: cell.column.id,
                             configuredSize: cell.column.columnDef.size,
@@ -439,6 +458,7 @@ export function DataTable<TData, TValue>({
                               ? filteredEmptyDescription
                               : emptyDescription
                           }
+                          action={hasActiveFilters ? undefined : emptyAction}
                           onClearFilters={
                             hasActiveFilters ? onClearFilters : undefined
                           }
@@ -489,20 +509,23 @@ function TableLoadingBar() {
   );
 }
 
-function getColumnClassName(columnId: string) {
+function getColumnClassName(columnId: string, previousColumnId?: string) {
   if (columnId === SELECT_COLUMN_ID) {
-    return "!p-0 text-center [&>[role=checkbox]]:translate-y-0";
+    return "!h-12 !p-0 cursor-pointer text-center [&>[role=checkbox]]:translate-y-0";
   }
 
+  const adjacentToSelection =
+    previousColumnId === SELECT_COLUMN_ID ? "!pl-0" : undefined;
+
   if (COMPACT_ICON_COLUMN_IDS.has(columnId)) {
-    return "w-0 px-2 md:px-2";
+    return cn(adjacentToSelection, "w-0 px-2 md:px-2");
   }
 
   if (columnId === ACTIONS_COLUMN_ID) {
-    return "whitespace-nowrap";
+    return cn(adjacentToSelection, "whitespace-nowrap");
   }
 
-  return undefined;
+  return adjacentToSelection;
 }
 
 function handleSelectCellClick(

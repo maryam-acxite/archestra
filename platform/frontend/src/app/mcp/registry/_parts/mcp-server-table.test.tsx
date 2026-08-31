@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,8 +8,10 @@ vi.mock("@/lib/auth/auth.query");
 vi.mock("@/lib/config/config.query");
 vi.mock("@/lib/organization.query");
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: routerPush, replace: vi.fn() }),
 }));
 
 vi.mock("@/lib/mcp/internal-mcp-catalog.query", () => ({
@@ -139,6 +141,7 @@ describe("McpServerTable uninstall permission", () => {
       data: undefined,
     } as unknown as ReturnType<typeof useAppearanceSettings>);
     useMcpServersMock.mockReturnValue({ data: [personalInstall] });
+    dismissMutateAsync.mockResolvedValue({ succeeded: [], failed: [] });
     grantAllExcept({});
   });
 
@@ -151,30 +154,6 @@ describe("McpServerTable uninstall permission", () => {
     );
 
     expect(await screen.findByText("Uninstall MCP Server")).toBeInTheDocument();
-  });
-
-  it("keeps server metadata compact while status fills the remaining width", () => {
-    const { container } = renderTable(table);
-
-    expect(container.querySelector("table")).toHaveStyle({
-      minWidth: "1068px",
-    });
-    expect(container.querySelector('th[data-column-id="name"]')).toHaveStyle({
-      width: "360px",
-    });
-    expect(container.querySelector('th[data-column-id="tools"]')).toHaveStyle({
-      width: "90px",
-    });
-    expect(container.querySelector('th[data-column-id="author"]')).toHaveStyle({
-      width: "212px",
-    });
-    expect(
-      (container.querySelector('th[data-column-id="status"]') as HTMLElement)
-        .style.width,
-    ).toBe("");
-    expect(container.querySelector('th[data-column-id="actions"]')).toHaveStyle(
-      { width: "160px" },
-    );
   });
 
   it("refuses the uninstall for a user without the delete permission", async () => {
@@ -190,7 +169,55 @@ describe("McpServerTable uninstall permission", () => {
     expect(screen.queryByText("Uninstall MCP Server")).not.toBeInTheDocument();
   });
 
-  it("keeps queue actions inline and moves lower-priority actions into overflow", async () => {
+  it("moves local runtime state to an icon dot and keeps Status installation-only", async () => {
+    const user = userEvent.setup();
+    const localItem = {
+      ...item,
+      id: "cat-local",
+      serverType: "local",
+    } as CatalogItem;
+    const localInstall = {
+      ...personalInstall,
+      id: "srv-local",
+      catalogId: localItem.id,
+      serverType: "local",
+    } as InstalledServer;
+
+    renderTable(
+      <McpServerTable
+        items={[localItem]}
+        getServerInfo={() => ({ installedServer: localInstall })}
+        envLabelByCatalog={new Map()}
+        issuesByCatalog={new Map()}
+        deploymentFeedState="ready"
+        deploymentStatuses={{
+          [localInstall.id]: {
+            state: "hibernated",
+            message: "Hibernated",
+            error: null,
+          },
+        }}
+        installingItemId={null}
+        onInstall={vi.fn()}
+        onReinstall={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Installed")).toBeInTheDocument();
+    expect(screen.queryByText("Hibernated")).not.toBeInTheDocument();
+    const statusDot = screen.getByRole("img", {
+      name: "Runtime status: Hibernated",
+    });
+    await user.hover(statusDot);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Hibernated. Scaled down after being idle",
+    );
+    expect(
+      screen.getAllByRole("link", { name: /Learn more/ }),
+    ).not.toHaveLength(0);
+  });
+
+  it("keeps queue actions inline without triggering row navigation", async () => {
     const user = userEvent.setup();
     const issue = {
       kind: "needs-reauth",
@@ -231,7 +258,14 @@ describe("McpServerTable uninstall permission", () => {
     expect(
       screen.getByRole("heading", { name: "Dismiss alert" }),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(routerPush).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Dismiss alert" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(routerPush).not.toHaveBeenCalled();
 
     expect(
       screen.getByRole("link", {

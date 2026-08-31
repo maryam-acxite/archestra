@@ -5282,6 +5282,27 @@ describe("K8sDeployment.applyK8sNetworkPolicy", () => {
     expect(policy?.spec?.egress).toEqual(PLAIN_FLOOR_EGRESS);
   });
 
+  test("applies explicit CIDR exceptions on top of the unrestricted floor", async () => {
+    const { api, policies } = makeStatefulNetworkingApi();
+    await makeNetworkPolicyDeployment({
+      networkingApi: api,
+      effectiveNetworkPolicy: makeNetworkPolicy({
+        egressMode: "unrestricted",
+        allowedCidrs: ["10.20.0.0/16"],
+      }),
+      networkPolicyCapabilities: PLAIN_CAPS,
+    }).applyK8sNetworkPolicy();
+
+    const egress = policies.get(POLICY_NAME)?.spec?.egress ?? [];
+    const publicRule = egress.find(
+      (rule) => rule.to?.[0]?.ipBlock?.cidr === "0.0.0.0/0",
+    );
+    expect(publicRule?.to?.[0]?.ipBlock?.except).toContain("10.0.0.0/8");
+    expect(egress).toContainEqual({
+      to: [{ ipBlock: { cidr: "10.20.0.0/16" } }],
+    });
+  });
+
   test("per-pod policy selector keys on app + mcp-server-id only, never the per-install name", async () => {
     const { api, policies } = makeStatefulNetworkingApi();
     await makeNetworkPolicyDeployment({
@@ -5763,15 +5784,6 @@ describe("K8sDeployment.statusSummary", () => {
     expect(summary.message).toBe("Deployment not created");
     expect(summary.error).toBeNull();
     expect(summary.serverName).toBe("test-server");
-    expect(summary.deploymentName).toBe("mcp-test-server");
-    expect(summary.namespace).toBe("test-namespace");
-  });
-
-  test("returns correct deployment name and namespace", () => {
-    const k8sDeployment = createK8sDeploymentInstance();
-
-    const summary = k8sDeployment.statusSummary;
-
     expect(summary.deploymentName).toBe("mcp-test-server");
     expect(summary.namespace).toBe("test-namespace");
   });

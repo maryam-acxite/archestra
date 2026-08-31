@@ -3,7 +3,7 @@ title: Knowledge
 category: Knowledge
 order: 1
 description: Built-in RAG knowledge — Knowledge Bases, connectors, and how retrieval works
-lastUpdated: 2026-08-27
+lastUpdated: 2026-08-29
 ---
 
 <!-- Renaming/deleting this file? Add a redirect in docs/redirects.json. -->
@@ -175,7 +175,7 @@ Open **Settings > Knowledge**. An embedding model must be set before Knowledge B
 
 Pick the API key and embedding model. The embedding model vectorizes ingested documents so they can be queried semantically. The same model is used for both indexing and querying, which is why it is locked once saved.
 
-- **Key** — only keys whose synced models have configured embedding dimensions appear in this list. If yours is missing, go to **LLM Providers > Models**, sync the provider, and set the dimensions for the embedding model. Supported dimensions: 384, 768, 1024, 1408, 1536, 3072. Keys connected through a subscription sign-in (an X Premium login, for example) do not appear — Knowledge needs an API key.
+- **Key** — only keys whose synced models have configured embedding dimensions appear in this list. If yours is missing, go to **LLM Providers > Models**, sync the provider, and set the dimensions for the embedding model. Supported dimensions: 384, 768, 1024, 1408, 1536, 3072. Keys connected through a subscription sign-in (a SuperGrok login, for example) do not appear — Knowledge needs an API key.
 - **Model** — any embedding-capable model exposed by the selected key.
 
 To change the embedding model, click **Drop** to clear the existing index — every document will need to be re-embedded on the next connector sync. The lock also applies in **LLM Providers > Models**: the configured model's embedding dimensions and input modalities cannot be edited until the configuration is dropped.
@@ -243,7 +243,7 @@ Knowledge Files is a repository for documents you upload directly — a signed c
 
 Upload PDF, Word, Markdown, CSV, JSON, HTML or plain text. The text is read at upload, and a file that cannot be read is refused right there — so nothing lands in the repository that would retrieve nothing later. A scanned PDF is accepted when [Document OCR](#document-ocr) is configured; its pages are transcribed when the file is indexed.
 
-Directories group documents and are flat — no sub-directories. Every document and directory has an audience: **Organization**, **Teams**, or **Only me**. Visibility follows the document into retrieval, so sharing a Knowledge Base with an agent does not widen who can read what is inside it.
+Directories group documents and are flat — no sub-directories. Create one from **Files** or from the directory menu while uploading. Every document and directory has an audience: **Organization**, **Teams**, or **Only me**. Visibility follows the document into retrieval, so sharing a Knowledge Base with an agent does not widen who can read what is inside it.
 
 Uploading stores a document; indexing makes it retrievable. Select documents or whole directories, choose **Add to knowledge base**, and pick an existing base or create one from the selection.
 

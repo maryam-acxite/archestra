@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useSetSettingsAction } from "@/app/settings/layout";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -31,6 +32,7 @@ import {
   TableRowActions,
 } from "@/components/table-row-actions";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { DataTable } from "@/components/ui/data-table";
 import { PermissionButton } from "@/components/ui/permission-button";
@@ -295,26 +297,26 @@ export function TeamsList() {
 
   return (
     <>
-      <div className="space-y-6">
-        <FilterBar className={!hasLabelFilters ? "!mb-3" : undefined}>
-          <SearchInput
-            isLoading={isLoading}
-            objectNamePlural="teams"
-            searchFields={["name"]}
-            className={filterSearchClass}
-          />
-          <LabelSelect
-            labelKeys={labelKeys}
-            LabelKeyRowComponent={TeamLabelKeyRow}
-            className={filterControlClass({ active: hasLabelFilters })}
-          />
-        </FilterBar>
+      <BulkActionsScope>
+        <CollectionFilters>
+          <FilterBar>
+            <SearchInput
+              isLoading={isLoading}
+              objectNamePlural="teams"
+              searchFields={["name"]}
+              className={filterSearchClass}
+            />
+            <LabelSelect
+              labelKeys={labelKeys}
+              LabelKeyRowComponent={TeamLabelKeyRow}
+              className={filterControlClass({ active: hasLabelFilters })}
+            />
+          </FilterBar>
 
-        {hasLabelFilters && (
-          <div className="!mb-3">
+          {hasLabelFilters && (
             <LabelFilterBadges onRemoveLabel={handleRemoveLabel} />
-          </div>
-        )}
+          )}
+        </CollectionFilters>
 
         <BulkActions
           count={selectedTeams.length}
@@ -350,7 +352,7 @@ export function TeamsList() {
           emptyMessage="No teams found"
           hideSelectedCount
         />
-      </div>
+      </BulkActionsScope>
 
       <TeamManagementDialog
         mode="create"

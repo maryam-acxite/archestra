@@ -328,6 +328,10 @@ vi.mock("@/lib/auth/auth.query");
 
 vi.mock("@/lib/config/config.query");
 
+vi.mock("@/lib/llm-provider-api-keys.query", () => ({
+  useAvailableLlmProviderApiKeys: () => ({ data: [] }),
+}));
+
 // Import the component after mocks are set up
 import { useHasPermissions } from "@/lib/auth/auth.query";
 import { useFeature } from "@/lib/config/config.query";
@@ -403,6 +407,35 @@ describe("ArchestraPromptInput", () => {
     localStorage.clear();
   });
 
+  it("turns the composer into a focused execution launcher", () => {
+    render(
+      <ArchestraPromptInput
+        {...defaultProps}
+        executionMode
+        executionAgentName="Codex"
+        allowFileUploads
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Starts Codex in an isolated execution. This becomes its live terminal when ready.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId(E2eTestId.ChatPromptTextarea)).toHaveAttribute(
+      "placeholder",
+      "Describe the task to run...",
+    );
+    expect(
+      screen.getByTestId(E2eTestId.ChatFileUploadButton),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(E2eTestId.ChatDisabledFileUploadButton),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
+    expect(screen.queryByText("Speech")).not.toBeInTheDocument();
+  });
+
   it("shows subscription sign-in without provider settings permission", () => {
     const onSubmit = vi.fn();
     mockControllerState.value = "keep this draft";
@@ -429,7 +462,7 @@ describe("ArchestraPromptInput", () => {
     expect(mockTextInputClear).not.toHaveBeenCalled();
   });
 
-  it("uses the subscription registry's X sign-in label", () => {
+  it("uses the subscription registry's SuperGrok sign-in label", () => {
     render(
       <ArchestraPromptInput
         {...defaultProps}
@@ -440,7 +473,7 @@ describe("ArchestraPromptInput", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Sign in with X" }),
+      screen.getByRole("button", { name: "Sign in with Grok" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Sign in with xAI" }),

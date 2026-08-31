@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   FilterSelect,
   filterSearchClass,
@@ -232,7 +233,7 @@ export default function ServiceAccountsSettingsPage() {
   // `DataTable` sets the table's `minWidth` to the sum of these sizes, so the
   // sum has to fit the settings shell's content column (~718px at 1200px wide)
   // or trailing columns disappear behind a horizontal scroll. These add up to
-  // 698 including the 56px select column, and each is wide enough for its own
+  // 710 including the 56px select column, and each is wide enough for its own
   // header to sit on one line.
   const columns: ColumnDef<ServiceAccount>[] = useMemo(() => {
     const baseColumns: ColumnDef<ServiceAccount>[] = [
@@ -298,7 +299,9 @@ export default function ServiceAccountsSettingsPage() {
       {
         id: "actions",
         header: "Actions",
-        size: 84,
+        // Two icon-sm buttons with the table's px-4 inset on both sides, so
+        // the last icon sits 16px from the frame like every other cell edge.
+        size: 96,
         cell: ({ row }) => renderRowActions(row.original),
       },
     ];
@@ -358,44 +361,45 @@ export default function ServiceAccountsSettingsPage() {
         >
           <TableCardView storageKey="archestra-service-accounts-view">
             <div>
-              <FilterBar
-                className="mb-3"
-                actions={<TableCardViewToggle />}
-                onClearFilters={hasActiveFilters ? clearFilters : undefined}
-              >
-                <SearchInput
-                  objectNamePlural="service accounts"
-                  searchFields={["name"]}
-                  className={filterSearchClass}
-                />
-                <RoleFilterSelect
-                  value={roleFilter}
-                  onValueChange={(value) =>
-                    updateQueryParams({
-                      role: value === ALL ? null : value,
-                      page: "1",
-                    })
-                  }
-                  allOptionValue={ALL}
-                />
-                <FilterSelect
-                  value={statusFilter}
-                  onValueChange={(value) =>
-                    updateQueryParams({
-                      status: value === ALL ? null : value,
-                      page: "1",
-                    })
-                  }
-                  placeholder="Filter by status"
-                  items={[
-                    { value: ALL, label: "All statuses" },
-                    ...STATUS_FILTERS.map((health) => ({
-                      value: health,
-                      label: ACCOUNT_HEALTH_LABELS[health],
-                    })),
-                  ]}
-                />
-              </FilterBar>
+              <CollectionFilters>
+                <FilterBar
+                  actions={<TableCardViewToggle />}
+                  onClearFilters={hasActiveFilters ? clearFilters : undefined}
+                >
+                  <SearchInput
+                    objectNamePlural="service accounts"
+                    searchFields={["name"]}
+                    className={filterSearchClass}
+                  />
+                  <RoleFilterSelect
+                    value={roleFilter}
+                    onValueChange={(value) =>
+                      updateQueryParams({
+                        role: value === ALL ? null : value,
+                        page: "1",
+                      })
+                    }
+                    allOptionValue={ALL}
+                  />
+                  <FilterSelect
+                    value={statusFilter}
+                    onValueChange={(value) =>
+                      updateQueryParams({
+                        status: value === ALL ? null : value,
+                        page: "1",
+                      })
+                    }
+                    placeholder="Filter by status"
+                    items={[
+                      { value: ALL, label: "All statuses" },
+                      ...STATUS_FILTERS.map((health) => ({
+                        value: health,
+                        label: ACCOUNT_HEALTH_LABELS[health],
+                      })),
+                    ]}
+                  />
+                </FilterBar>
+              </CollectionFilters>
               {isServiceAccountsLoadError ? (
                 <QueryLoadError
                   title="Couldn't load your service accounts"

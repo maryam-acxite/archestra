@@ -374,7 +374,7 @@ export const RouteId = {
   OpenaiCodexDeviceAuthStart: "openaiCodexDeviceAuthStart",
   OpenaiCodexDeviceAuthPoll: "openaiCodexDeviceAuthPoll",
 
-  // xAI "X Premium (SuperGrok)" device-flow sign-in — connects an X Premium
+  // xAI "SuperGrok" device-flow sign-in — connects a SuperGrok
   // subscription as an xAI provider credential
   XaiSubscriptionDeviceAuthStart: "xaiSubscriptionDeviceAuthStart",
   XaiSubscriptionDeviceAuthPoll: "xaiSubscriptionDeviceAuthPoll",
@@ -452,6 +452,33 @@ export const RouteId = {
   CreateServiceAccountToken: "createServiceAccountToken",
   UpdateServiceAccountToken: "updateServiceAccountToken",
   DeleteServiceAccountToken: "deleteServiceAccountToken",
+
+  // Agent Background execution
+  GetAgentBackgroundExecutionPreflight: "getAgentBackgroundExecutionPreflight",
+  SetAgentBackgroundExecutionCredential:
+    "setAgentBackgroundExecutionCredential",
+  DeleteAgentBackgroundExecutionCredential:
+    "deleteAgentBackgroundExecutionCredential",
+  ListExecutionCredentials: "listExecutionCredentials",
+  CreateExecutionCredential: "createExecutionCredential",
+  GetExecutionCredentialUsage: "getExecutionCredentialUsage",
+  UpdateExecutionCredential: "updateExecutionCredential",
+  DeleteExecutionCredential: "deleteExecutionCredential",
+  SetPersonalExecutionCredentialConnection:
+    "setPersonalExecutionCredentialConnection",
+  DeletePersonalExecutionCredentialConnection:
+    "deletePersonalExecutionCredentialConnection",
+  SetOrganizationExecutionCredentialConnection:
+    "setOrganizationExecutionCredentialConnection",
+  DeleteOrganizationExecutionCredentialConnection:
+    "deleteOrganizationExecutionCredentialConnection",
+  GetAgentExecutions: "getAgentExecutions",
+  StartAgentExecution: "startAgentExecution",
+  GetMyAgentExecutions: "getMyAgentExecutions",
+  GetMyAgentExecution: "getMyAgentExecution",
+  UpdateAgentExecution: "updateAgentExecution",
+  CancelAgentExecution: "cancelAgentExecution",
+  DeleteAgentExecution: "deleteAgentExecution",
 
   // Virtual API Key Routes
   GetAllVirtualApiKeys: "getAllVirtualApiKeys",
@@ -634,6 +661,7 @@ export const RouteId = {
   DeleteChatOpsBinding: "deleteChatOpsBinding",
   UpdateChatOpsBinding: "updateChatOpsBinding",
   BulkUpdateChatOpsBindings: "bulkUpdateChatOpsBindings",
+  ApplyChatOpsBindingPlan: "applyChatOpsBindingPlan",
   CreateChatOpsDmBinding: "createChatOpsDmBinding",
   UpdateChatOpsConfigInQuickstart: "updateChatOpsConfigInQuickstart",
   UpdateSlackChatOpsConfig: "updateSlackChatOpsConfig",

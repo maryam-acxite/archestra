@@ -6,21 +6,26 @@ import {
   MESSAGING_CHANNEL_LABELS,
   type MessagingChannelId,
 } from "@archestra/shared";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { siKubernetes } from "simple-icons";
 import { AgentSelector } from "@/components/agent-selector";
+import { ButtonWithTooltip } from "@/components/button-with-tooltip";
 import { ChannelIcon } from "@/components/channel-icon";
 import { ExternalDocsLink } from "@/components/external-docs-link";
 import { LlmModelSearchableSelect } from "@/components/llm-model-select";
 import { LlmProviderApiKeyDropdown } from "@/components/llm-provider-api-key-dropdown";
 import { QueryLoadError } from "@/components/query-load-error";
 import { WithPermissions } from "@/components/roles/with-permissions";
+import { ExecutionCredentialsSection } from "@/components/settings/execution-credentials-section";
 import { IntegrationAvailabilitySection } from "@/components/settings/integration-availability-section";
 import {
   SettingsBlock,
   SettingsSaveBar,
   SettingsSectionStack,
 } from "@/components/settings/settings-block";
+import { TableRowActions } from "@/components/table-row-actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useOrgScopedAgents } from "@/lib/agent.query";
 import {
   APPS_HACKATHON_DATE_RANGE_LABEL,
@@ -38,6 +42,7 @@ import {
   APPS_HACKATHON_SETTING_ANCHOR,
   useAppsHackathonOffered,
 } from "@/lib/app-session-recording/apps-hackathon";
+import { type FeaturesResponse, useFeature } from "@/lib/config/config.query";
 import { useAppName } from "@/lib/hooks/use-app-name";
 import { isPersonalSubscription } from "@/lib/llm-key-subscription";
 import { useLlmModels } from "@/lib/llm-models.query";
@@ -90,6 +95,7 @@ export default function AgentSettingsPage() {
   // switch on. Past the closing date the whole section goes rather than
   // lingering as a switch that no longer changes anything.
   const hackathonOffered = useAppsHackathonOffered();
+  const executionBackend = useFeature("agentBackgroundExecutionBackend");
 
   const {
     data: allModels,
@@ -455,6 +461,100 @@ export default function AgentSettingsPage() {
         emptyMessage="No channels found."
         savedMessage="Available messaging channels updated"
       />
+      {executionBackend && (
+        <>
+          <ExecutionCredentialsSection />
+          <ExecutionBackendSection executionBackend={executionBackend} />
+        </>
+      )}
     </SettingsSectionStack>
+  );
+}
+
+type ExecutionBackend = NonNullable<
+  FeaturesResponse["agentBackgroundExecutionBackend"]
+>;
+
+function ExecutionBackendSection({
+  executionBackend,
+}: {
+  executionBackend: ExecutionBackend;
+}) {
+  return (
+    <SettingsBlock
+      id="execution-backend"
+      title="Execution backend"
+      description={
+        <>
+          Execution backends provide the isolated environment where delegated
+          Agent tasks run.{" "}
+          <ExternalDocsLink
+            href={getDocsUrl(DocsPage.PlatformAgentBackgroundExecution)}
+            className="whitespace-nowrap"
+          >
+            Learn more
+          </ExternalDocsLink>
+        </>
+      }
+      control={
+        <ButtonWithTooltip
+          type="button"
+          size="sm"
+          disabled
+          disabledText="Additional execution backends are coming soon."
+        >
+          <Plus className="size-4" />
+          <span>Add backend</span>
+        </ButtonWithTooltip>
+      }
+      notice={
+        !executionBackend.available
+          ? "The feature is enabled, but the Kubernetes backend is unreachable. Check the orchestrator configuration."
+          : undefined
+      }
+    >
+      <div className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-background">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="size-5"
+              fill={`#${siKubernetes.hex}`}
+            >
+              <path d={siKubernetes.path} />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-medium">Kubernetes</h3>
+            <p className="text-xs text-muted-foreground">
+              Runs each delegated task in an isolated Kubernetes Job
+            </p>
+          </div>
+        </div>
+        <div className="self-end sm:self-auto">
+          <TableRowActions
+            itemName="Kubernetes"
+            actions={[
+              {
+                icon: <Pencil className="size-4" />,
+                label: "Edit",
+                disabled: true,
+                disabledTooltip:
+                  "Backend configuration is managed by the deployment today.",
+              },
+              {
+                icon: <Trash2 className="size-4" />,
+                label: "Delete",
+                variant: "destructive",
+                disabled: true,
+                disabledTooltip:
+                  "Kubernetes is the only supported backend and cannot be removed.",
+              },
+            ]}
+          />
+        </div>
+      </div>
+    </SettingsBlock>
   );
 }

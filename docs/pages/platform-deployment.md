@@ -2,7 +2,7 @@
 title: Deployment
 category: Archestra Platform
 order: 3
-lastUpdated: 2026-08-26
+lastUpdated: 2026-08-30
 ---
 
 <!-- Renaming/deleting this file? Add a redirect in docs/redirects.json. -->
@@ -519,25 +519,15 @@ Archestra protects every MCP server pod from Server-Side Request Forgery (SSRF) 
 
 Each pod gets one policy, chosen by its environment's egress mode:
 
-- **Allow all** (`unrestricted`, the default) — a reserved-range floor: DNS and the public internet are allowed; private, link-local, and metadata ranges are blocked.
+- **Public internet** (`unrestricted`, the default) — DNS and public egress are allowed. Explicit CIDRs can open selected private ranges; other private, link-local, metadata, and reserved ranges remain blocked.
 - **Allowlist** (`restricted`) — only the CIDRs and domains the environment allow-lists, plus DNS.
 - **Block all** (`off`) — all egress is denied.
 
 A namespace-wide default-deny baseline also selects every MCP pod, so a pod that is still starting up is denied by default rather than left open.
 
-**Blocked reserved ranges** (the Allow all floor):
-
-- `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` - RFC 1918 private ranges (cluster pods, services, nodes)
-- `169.254.0.0/16` - Link-local / cloud metadata endpoints (AWS IMDSv1, GCP, Azure)
-- `168.63.129.16/32` - Azure platform metadata (a public IP outside the private ranges)
-- `100.64.0.0/10` - Carrier-grade NAT (RFC 6598)
-- `127.0.0.0/8`, `0.0.0.0/8` - Loopback and unspecified addresses
-- `::1/128`, `fc00::/7`, `fe80::/10` - The IPv6 equivalents
-- `64:ff9b::/96` - NAT64 (blocks reaching the IPv4 ranges via IPv6; IPv4-mapped IPv6 is already covered by the IPv4 rules)
+Public internet uses a maintained floor for private, metadata, and reserved destinations. See [The Public Internet Floor](/docs/platform-environments#the-public-internet-floor) for the exact ranges and CIDR exception behavior.
 
 **Prerequisite**: your cluster must use a CNI that enforces network policies. Calico, Cilium, and GKE Dataplane V2 enforce standard `NetworkPolicy` objects; on EKS Auto Mode, where `ApplicationNetworkPolicy` is the enforcement mechanism, the policy is emitted as an `ApplicationNetworkPolicy` instead. Where no enforcing dataplane is present, the policies are created but not enforced.
-
-To let a server reach a specific internal service — a Grafana instance in the `monitoring` namespace, for example — set its environment's egress mode to **Allowlist** (`restricted`) and add that CIDR or domain to the allow-list. See [Network Policies](/docs/platform-private-registry#network-policies).
 
 ### Accessing the Platform
 
@@ -837,6 +827,42 @@ Upgrading from a chart that ran the included engine leaves its cache volume behi
 - **`ARCHESTRA_DAGGER_RUNTIME_MAX_QUEUE_LENGTH`** - Sandbox commands allowed to wait for a free slot. Past this, a command fails with a runtime-at-capacity error instead of queueing.
   - Default: `50`
 
+### Agent Background Execution
+
+Background execution runs delegated Agent tasks in dedicated Kubernetes pods. You can view logs, open a shell, and steer a run while it is active. It needs the Kubernetes runtime configured (see `ARCHESTRA_ORCHESTRATOR_*`); without it the capability stays unavailable.
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_ENABLED`** - Enables Background execution. A run can carry the credentials of the person who started it, so this gate is independent of `ARCHESTRA_BETA` and never turns on by implication.
+  - Default: `false`
+  - Values: `true`, `false`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_BASE_IMAGE`** - Container image prefilled when Background execution is enabled on an Agent. The built-in image supplies the default Agent loop; custom images can replace it and set their own command.
+  - Default: `europe-west1-docker.pkg.dev/friendly-path-465518-r6/archestra-public/agent-archestra:latest`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_ALLOW_PRIVILEGED`** - Allows Agent administrators to configure privileged background pods. Privileged containers have node-level access.
+  - Default: `false`
+  - Values: `true`, `false`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_PLATFORM_BASE_URL`** - Base URL a background pod uses to reach the LLM proxy and the MCP gateway. It has to be reachable from inside the cluster. With neither this nor `ARCHESTRA_INTERNAL_API_BASE_URL` set, starting a run fails rather than letting it bypass the proxy.
+  - Default: `ARCHESTRA_INTERNAL_API_BASE_URL`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_DEFAULT_TTL_HOURS`** - Lifetime cap for runs whose Agent sets none. Kubernetes enforces it on the workload as well.
+  - Default: `72`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_DEFAULT_IDLE_TIMEOUT_MINUTES`** - How long the built-in execution agent waits for another steer after finishing its current work before the run exits. An Agent can override this value. Custom images receive the timeout as `ARCHESTRA_AGENT_BACKGROUND_EXECUTION_IDLE_TIMEOUT_SECONDS` and must implement the wait themselves.
+  - Default: `180`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_CPU_REQUEST`**, **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_MEMORY_REQUEST`**, **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_MEMORY_LIMIT`** - Pod resources for a run whose Agent sets none. There is no CPU limit by default: throttling an agent mid-turn reads as a hang rather than back-pressure.
+  - Defaults: `500m`, `1Gi`, `4Gi`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_EPHEMERAL_STORAGE_LIMIT`** - Maximum writable scratch space for one execution. Kubernetes enforces the limit on the run's `emptyDir` volume.
+  - Default: `10Gi`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_PLATFORM_POD_SELECTOR`** - Label selector matching the platform's own API pods, written as `key=value` pairs. Background pods get an egress policy allowing exactly that destination. Override it when your deployment labels the platform differently.
+  - Default: `archestra.io/p4-shim-client=true`
+
+- **`ARCHESTRA_AGENT_BACKGROUND_EXECUTION_RECONCILE_INTERVAL_SECONDS`** - How often the reconciler syncs run state and applies the lifetime and idle stops.
+  - Default: `30`
+
 ### Skills Marketplace
 
 - **`ARCHESTRA_PLUGINS_ENABLED`** - Enables the Plugins catalog, an initial OpenAPPA import, and delivery through connection setup commands. Plugin files execute on connected developer machines, so this gate is off by default.
@@ -1092,16 +1118,16 @@ These environment variables set the default base URL for each LLM provider. Per-
   - Default: `https://api.x.ai/v1`
   - Use this to point to your own proxy or other custom endpoints
 
-- **`ARCHESTRA_XAI_SUBSCRIPTION_ISSUER`** - OAuth issuer for the X Premium (SuperGrok) sign-in. Its OIDC discovery document supplies the device and token endpoints.
+- **`ARCHESTRA_XAI_SUBSCRIPTION_ISSUER`** - OAuth issuer for the SuperSuperGrok sign-in. Its OIDC discovery document supplies the device and token endpoints.
   - Default: `https://auth.x.ai`
 - **`ARCHESTRA_XAI_SUBSCRIPTION_VERIFICATION_ORIGIN`** - Allowed browser origin for the device-flow verification page. Responses pointing elsewhere are rejected.
   - Default: `https://accounts.x.ai`
 - **`ARCHESTRA_XAI_SUBSCRIPTION_CLIENT_VERSION`** - Tested xAI session-protocol version reported to the proxy. Update this deliberately when adopting a newer proxy contract.
   - Default: `1.0.0`
-- **`ARCHESTRA_XAI_SUBSCRIPTION_BASE_URL`** - OpenAI-compatible inference and model endpoint for X Premium OAuth sessions.
+- **`ARCHESTRA_XAI_SUBSCRIPTION_BASE_URL`** - OpenAI-compatible inference and model endpoint for SuperGrok OAuth sessions.
   - Default: `https://cli-chat-proxy.grok.com/v1`
   - This is separate from the metered `ARCHESTRA_XAI_BASE_URL` API-key endpoint
-- **`ARCHESTRA_XAI_SUBSCRIPTION_CLIENT_ID`** - Public OAuth client id for the X Premium device-code login.
+- **`ARCHESTRA_XAI_SUBSCRIPTION_CLIENT_ID`** - Public OAuth client id for the SuperGrok device-code login.
   - Default: the public Grok CLI client id
 - **`ARCHESTRA_XAI_SUBSCRIPTION_SCOPES`** - Space-separated scopes requested at device-authorization time. Drop `grok-cli:access` if xAI refuses it for your accounts; `offline_access` is required, since it is what yields the refresh token the key stores.
   - Default: `openid profile email offline_access api:access grok-cli:access`
@@ -1395,7 +1421,7 @@ A2A task streams work across replicas. A client can subscribe on one replica whi
   - Example: `30`
   - Tools can also be refreshed on demand: from the server's Inspector tab in the MCP Registry, or via `POST /api/mcp_server/:id/reload-tools`.
 
-- **`ARCHESTRA_MCP_SERVER_ALERTING_ENABLED`** - Beta gate for MCP Registry attention facets, issue diagnostics, ownership guidance, and per-viewer alert dismissal.
+- **`ARCHESTRA_MCP_SERVER_ALERTING_ENABLED`** - Beta gate for MCP Registry attention ordering, issue diagnostics, ownership guidance, and per-viewer alert dismissal.
   - Default: `false`
   - A blank value falls back to the `ARCHESTRA_BETA` master switch. An explicit `false` keeps alerting and its dismissal APIs hidden even when the master switch is enabled.
 

@@ -17,7 +17,11 @@ import { ApiKeyLoadError } from "@/components/api-key-load-error";
 import { BulkVisibilityDialog } from "@/components/bulk-visibility-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { IdentityFields } from "@/components/identity-fields";
 import { LoadingState } from "@/components/loading";
 import { NoApiKeySetup } from "@/components/no-api-key-setup";
@@ -40,6 +44,7 @@ import {
   TableCardView,
   TableCardViewContent,
   TableCardViewToggle,
+  useNavigableCard,
 } from "@/components/table-card-view";
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
@@ -250,36 +255,36 @@ function ProjectsList() {
             confirmLabel={PERMANENT_DELETE_LABEL}
           />
         )}
-        <div className="space-y-6">
-          <FilterBar
-            className={
-              !isDeletedView && projects.length > 0 ? "!mb-3" : undefined
-            }
-            actions={!isDeletedView ? <TableCardViewToggle /> : undefined}
-          >
-            {/* Hidden in the trash: the backend serves that slice whole, ignoring
+        <div>
+          <CollectionFilters>
+            <FilterBar
+              leading
+              actions={!isDeletedView ? <TableCardViewToggle /> : undefined}
+            >
+              {/* Hidden in the trash: the backend serves that slice whole, ignoring
               search and scope, so live controls would read as broken filters. */}
-            {!isDeletedView && (
-              <>
-                <SearchInput
-                  isLoading={isFetching}
-                  placeholder="Search projects"
-                  paramName="search"
-                  className={filterSearchClass}
-                />
-                <ResourceScopeFilter
-                  ownerLabelPlural="projects"
-                  allLabel="All projects"
-                  adminPermission={{ project: ["admin"] }}
-                />
-              </>
-            )}
-            {/* Gated on `project:admin`, matching the slice the backend serves:
+              {!isDeletedView && (
+                <>
+                  <SearchInput
+                    isLoading={isFetching}
+                    placeholder="Search projects"
+                    paramName="search"
+                    className={filterSearchClass}
+                  />
+                  <ResourceScopeFilter
+                    ownerLabelPlural="projects"
+                    allLabel="All projects"
+                    adminPermission={{ project: ["admin"] }}
+                  />
+                </>
+              )}
+              {/* Gated on `project:admin`, matching the slice the backend serves:
               anyone else switching to Deleted would get an empty table. */}
-            <ResourceDeletedStatusFilter
-              deletePermission={{ project: ["admin"] }}
-            />
-          </FilterBar>
+              <ResourceDeletedStatusFilter
+                deletePermission={{ project: ["admin"] }}
+              />
+            </FilterBar>
+          </CollectionFilters>
           {(isPending || isFetching) && projects.length === 0 ? (
             <LoadingState label="Loading projects…" variant="page" />
           ) : isDeletedView ? (
@@ -388,6 +393,7 @@ function ProjectSection({
     clearSelection,
     selected: selectedProjects,
     selectAllMatching,
+    rangeSelection,
   } = useBulkSelection({
     rows: projects,
     getId: (project) => project.id,
@@ -401,6 +407,7 @@ function ProjectSection({
     rowSelection,
     setRowSelection,
     canSelect: canSelectProject,
+    rangeSelection,
   });
   const selectedForSharing = selectedProjects.filter(canShareProjectItem);
   const selectedForDelete = selectedProjects.filter(canDeleteProjectItem);
@@ -462,6 +469,7 @@ function ProjectSection({
             onRowSelectionChange={setRowSelection}
             onPageRowIdsChange={onPageRowIdsChange}
             canSelect={canSelectProject}
+            rangeSelection={rangeSelection}
           />
         }
         cards={
@@ -603,70 +611,74 @@ function ProjectCard({
 } & BulkCardSelectionProps) {
   const { data: isProjectAdmin } = useHasPermissions({ project: ["admin"] });
   const { data: canShareOrg } = useHasPermissions({ project: ["share-org"] });
+  const router = useRouter();
+  const navigation = useNavigableCard({
+    onNavigate: () => router.push(`/projects/${project.id}`),
+    selected,
+  });
   return (
-    // `relative` + the title link's stretched `::after` (after:inset-0) makes the
-    // whole card a single click target for the project. Interactive children
-    // (the actions menu) sit above it via `relative z-10`.
     <div
-      className={`relative rounded-lg border p-4 transition-colors ${
-        selected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-      }`}
+      {...navigation.props}
+      className={`rounded-lg border p-4 transition-colors ${navigation.className} ${selected ? "border-primary bg-primary/5" : ""}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <Link
-          href={`/projects/${project.id}`}
-          className="flex min-w-0 items-center gap-2 after:absolute after:inset-0"
-        >
-          <span className="shrink-0">
-            <AgentIcon icon={project.icon} fallbackType="project" size={18} />
-          </span>
-          <span className="min-w-0 truncate font-medium">{project.name}</span>
-        </Link>
-        <span className="relative z-10 flex shrink-0 items-center gap-1">
-          <Checkbox
-            checked={selected}
-            disabled={selectionDisabled}
-            onCheckedChange={(value) => onSelectedChange(!!value)}
-            onClick={onSelectionClick}
-            aria-label={`Select ${project.name}`}
-            aria-description={
-              selectionDisabled ? "You cannot modify this project" : undefined
-            }
-            title={
-              selectionDisabled ? "You cannot modify this project" : undefined
-            }
-          />
-          {/* Scope pill (personal/team/org) on every card. The owner label is
+      <div className="flex items-start gap-3">
+        <Checkbox
+          className="mt-1"
+          checked={selected}
+          disabled={selectionDisabled}
+          onCheckedChange={(value) => onSelectedChange(!!value)}
+          onClick={onSelectionClick}
+          aria-label={`Select ${project.name}`}
+          aria-description={
+            selectionDisabled ? "You cannot modify this project" : undefined
+          }
+          title={
+            selectionDisabled ? "You cannot modify this project" : undefined
+          }
+        />
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <Link
+            href={`/projects/${project.id}`}
+            className="flex min-w-0 items-center gap-2"
+          >
+            <span className="shrink-0">
+              <AgentIcon icon={project.icon} fallbackType="project" size={18} />
+            </span>
+            <span className="min-w-0 truncate font-medium">{project.name}</span>
+          </Link>
+          <span className="flex shrink-0 items-center gap-1">
+            {/* Scope pill (personal/team/org) on every card. The owner label is
               added only on another member's PERSONAL project (admin oversight),
               where the personal pill alone can't say whose it is — for team/org
               the scope pill already conveys the sharing. */}
-          <ScopeBadge
-            scope={projectVisibilityToScope(project.visibility)}
-            teamNames={project.shareTeamNames}
-            userNames={project.shareUserNames}
-          />
-          {project.viewerRole === "admin" && project.visibility === null && (
-            <Badge variant="secondary">
-              {project.ownerName
-                ? `Owned by ${project.ownerName}`
-                : "Other user"}
-            </Badge>
-          )}
-          <ProjectActionsMenu
-            pinned={!!project.pinnedAt}
-            canPin={project.viewerRole !== "admin"}
-            canManage={canManageProject(project.viewerRole, !!isProjectAdmin)}
-            canDelete={canDeleteProject({
-              viewerRole: project.viewerRole,
-              visibility: project.visibility,
-              isProjectAdmin: !!isProjectAdmin,
-              canShareOrg: !!canShareOrg,
-            })}
-            onTogglePin={() => onTogglePin(project)}
-            onEdit={() => onEdit(project)}
-            onDelete={() => onDelete(project)}
-          />
-        </span>
+            <ScopeBadge
+              scope={projectVisibilityToScope(project.visibility)}
+              teamNames={project.shareTeamNames}
+              userNames={project.shareUserNames}
+            />
+            {project.viewerRole === "admin" && project.visibility === null && (
+              <Badge variant="secondary">
+                {project.ownerName
+                  ? `Owned by ${project.ownerName}`
+                  : "Other user"}
+              </Badge>
+            )}
+            <ProjectActionsMenu
+              pinned={!!project.pinnedAt}
+              canPin={project.viewerRole !== "admin"}
+              canManage={canManageProject(project.viewerRole, !!isProjectAdmin)}
+              canDelete={canDeleteProject({
+                viewerRole: project.viewerRole,
+                visibility: project.visibility,
+                isProjectAdmin: !!isProjectAdmin,
+                canShareOrg: !!canShareOrg,
+              })}
+              onTogglePin={() => onTogglePin(project)}
+              onEdit={() => onEdit(project)}
+              onDelete={() => onDelete(project)}
+            />
+          </span>
+        </div>
       </div>
       {/* Always reserve two lines so cards keep a uniform height regardless of
           description length (or absence). */}

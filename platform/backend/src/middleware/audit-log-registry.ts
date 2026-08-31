@@ -8,6 +8,7 @@ import chatOpsConfigModel from "@/models/chatops-config";
 import EnvironmentModel from "@/models/environment";
 import EnvironmentDefaultUserLimitModel from "@/models/environment-default-user-limit";
 import EnvironmentResourceDefaultModel from "@/models/environment-resource-default";
+import ExecutionCredentialDefinitionModel from "@/models/execution-credential-definition";
 import GithubAppConfigModel from "@/models/github-app-config";
 import GithubPatModel from "@/models/github-pat";
 import InternalMcpCatalogModel from "@/models/internal-mcp-catalog";
@@ -143,6 +144,42 @@ export const AUDITABLE_ROUTES: Record<string, AuditableRouteConfig> = {
   "/api/agents/:id": {
     resourceType: "agent",
     fetchById: (id, orgId) => AgentModel.findByIdForAudit(id, orgId),
+  },
+  "/api/agents/:id/background-execution/credentials/:key": {
+    resourceType: "agent",
+    action: "agent.updated",
+    fetchById: (id, orgId) => AgentModel.findByIdForAudit(id, orgId),
+    onlyWhenChanged: true,
+  },
+  "/api/execution-credentials": {
+    resourceType: "executionCredential",
+    fetchById: (id, orgId) =>
+      ExecutionCredentialDefinitionModel.findByIdForAudit(id, orgId),
+  },
+  "/api/execution-credentials/:key": {
+    resourceType: "executionCredential",
+    resourceIdParam: "key",
+    fetchById: (key, orgId) =>
+      ExecutionCredentialDefinitionModel.findByKeyForAudit(key, orgId),
+  },
+  "/api/execution-credentials/:key/organization": {
+    resourceType: "executionCredential",
+    resourceIdParam: "key",
+    action: "executionCredential.updated",
+    onlyWhenChanged: true,
+  },
+  "/api/agents/:id/executions": {
+    resourceType: "agentExecution",
+    action: "agentExecution.created",
+  },
+  "/api/agent-executions/:taskId/cancel": {
+    resourceType: "agentExecution",
+    resourceIdParam: "taskId",
+    action: "agentExecution.canceled",
+  },
+  "/api/agent-executions/:taskId": {
+    resourceType: "agentExecution",
+    resourceIdParam: "taskId",
   },
   "/api/agents/:id/restore": {
     resourceType: "agent",
@@ -790,6 +827,13 @@ export const AUDITABLE_ROUTES: Record<string, AuditableRouteConfig> = {
   // ChatOps
   "/api/chatops/bindings": {
     resourceType: "chatOpsBinding",
+    resourceIdSource: "organizationContext",
+    fetchById: (_id, orgId) =>
+      ChatOpsChannelBindingModel.findBindingsFingerprintForOrganization(orgId),
+  },
+  "/api/chatops/bindings/assignment-plan": {
+    resourceType: "chatOpsBinding",
+    action: "chatOpsBinding.updated",
     resourceIdSource: "organizationContext",
     fetchById: (_id, orgId) =>
       ChatOpsChannelBindingModel.findBindingsFingerprintForOrganization(orgId),

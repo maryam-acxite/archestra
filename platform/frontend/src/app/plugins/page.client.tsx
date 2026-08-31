@@ -20,6 +20,7 @@ import { BulkVisibilityDialog } from "@/components/bulk-visibility-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -34,7 +35,6 @@ import {
 } from "@/components/resource-scope-filter";
 import { ResourceVisibilityBadge } from "@/components/resource-visibility-badge";
 import { SearchInput } from "@/components/search-input";
-import { useSkillsPluginsNavTabs } from "@/components/skills-plugins-nav-tabs";
 import {
   TableCard,
   TableCardList,
@@ -110,7 +110,6 @@ export default function PluginsPage() {
 }
 
 function PluginsGate() {
-  const tabs = useSkillsPluginsNavTabs();
   const enabled = useFeature("plugins");
 
   // The feature flag arrives with the rest of the config; until it does this
@@ -126,7 +125,6 @@ function PluginsGate() {
       <PageLayout
         title="Plugins"
         description="Plugins are disabled for this deployment."
-        tabs={tabs}
       >
         <div />
       </PageLayout>
@@ -137,7 +135,6 @@ function PluginsGate() {
 }
 
 function PluginsList() {
-  const tabs = useSkillsPluginsNavTabs();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -303,7 +300,7 @@ function PluginsList() {
   const [bulkInstallOpen, setBulkInstallOpen] = useState(false);
   const bulkVisibility = useBulkUpdatePluginVisibility();
   const bulkDelete = useBulkDeletePlugins();
-  const bulkSelection = useBulkSelection({
+  const { rangeSelection, ...bulkSelection } = useBulkSelection({
     rows: filteredPlugins,
     getId: (plugin) => plugin.id,
     filterSignature: JSON.stringify({
@@ -320,6 +317,7 @@ function PluginsList() {
     getRowId: (plugin) => plugin.id,
     rowSelection: bulkSelection.rowSelection,
     setRowSelection: bulkSelection.setRowSelection,
+    rangeSelection,
   });
   const bulkInstall = resolvePluginInstallSelection(bulkSelection.selected);
   const [installingPlugin, setInstallingPlugin] =
@@ -583,7 +581,7 @@ function PluginsList() {
 
   if (isLoadingError) {
     return (
-      <PageLayout title="Plugins" description={PLUGINS_DESCRIPTION} tabs={tabs}>
+      <PageLayout title="Plugins" description={PLUGINS_DESCRIPTION}>
         <QueryLoadError
           title="Couldn't load your plugins"
           onRetry={() => refetch()}
@@ -600,7 +598,6 @@ function PluginsList() {
       <PageLayout
         title="Plugins"
         description={PLUGINS_DESCRIPTION}
-        tabs={tabs}
         actionButton={
           !showEmptyState && (
             <PermissionButton
@@ -620,8 +617,9 @@ function PluginsList() {
             <PluginsEmptyState />
           ) : (
             <>
-              <div className="mb-3 flex flex-col gap-2">
+              <CollectionFilters>
                 <FilterBar
+                  leading
                   onClearFilters={hasActiveFilters ? clearFilters : undefined}
                   moreFilters={[
                     {
@@ -751,7 +749,7 @@ function PluginsList() {
                   />
                 </FilterBar>
                 <ActiveFilterBadges adminPermission={{ plugin: ["admin"] }} />
-              </div>
+              </CollectionFilters>
 
               <BulkActions
                 count={bulkSelection.selected.length}
@@ -817,6 +815,11 @@ function PluginsList() {
                         }
                         description={plugin.description}
                         actions={renderPluginActions(plugin)}
+                        onNavigate={
+                          canViewPluginDetails
+                            ? () => router.push(pluginDetailHref(plugin.id))
+                            : undefined
+                        }
                         {...cardSelection(plugin)}
                         selectionLabel={`Select ${plugin.displayName}`}
                         footer={
@@ -881,6 +884,7 @@ function PluginsList() {
                     rowSelection={bulkSelection.rowSelection}
                     onRowSelectionChange={bulkSelection.setRowSelection}
                     onPageRowIdsChange={bulkSelection.onPageRowIdsChange}
+                    rangeSelection={rangeSelection}
                     isLoading={isFetching}
                     fixedWidthColumnIds={[
                       "compatibility",

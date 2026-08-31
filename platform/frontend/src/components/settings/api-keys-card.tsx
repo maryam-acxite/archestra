@@ -11,7 +11,11 @@ import { CopyButton } from "@/components/copy-button";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { ExpirationDateTimeField } from "@/components/expiration-date-time-field";
 import { ExternalDocsLink } from "@/components/external-docs-link";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { FormDialog } from "@/components/form-dialog";
 import { LoadingState, LoadingWrapper } from "@/components/loading";
 import { QueryLoadError } from "@/components/query-load-error";
@@ -20,6 +24,7 @@ import { SearchInput } from "@/components/search-input";
 import { TableRowActions } from "@/components/table-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -319,21 +324,22 @@ function ApiKeysCardContent() {
           isPending={(isPending || isFetching) && apiKeys.length === 0}
           loadingFallback={<LoadingState variant="page" />}
         >
-          <div>
-            <FilterBar
-              className="mb-3"
-              onClearFilters={
-                search
-                  ? () => updateQueryParams({ search: null, page: "1" })
-                  : undefined
-              }
-            >
-              <SearchInput
-                objectNamePlural="API keys"
-                searchFields={["key name"]}
-                className={filterSearchClass}
-              />
-            </FilterBar>
+          <BulkActionsScope>
+            <CollectionFilters>
+              <FilterBar
+                onClearFilters={
+                  search
+                    ? () => updateQueryParams({ search: null, page: "1" })
+                    : undefined
+                }
+              >
+                <SearchInput
+                  objectNamePlural="API keys"
+                  searchFields={["key name"]}
+                  className={filterSearchClass}
+                />
+              </FilterBar>
+            </CollectionFilters>
             {isApiKeysLoadError ? (
               <QueryLoadError
                 title="Couldn't load your API keys"
@@ -398,7 +404,7 @@ function ApiKeysCardContent() {
                 />
               </>
             )}
-          </div>
+          </BulkActionsScope>
         </LoadingWrapper>
       </section>
 

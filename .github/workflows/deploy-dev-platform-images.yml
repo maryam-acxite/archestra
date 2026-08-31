@@ -98,6 +98,18 @@ jobs:
       # so a dev build handed to a tester runs natively on Apple Silicon (arm64).
       # Release images (build-dockerhub-image.yml) are always multi-arch.
       amd64_only: ${{ github.event_name == 'push' }}
+      # Cold PR evidence: 11m36s on 4-vCPU ubuntu-latest versus 3m26s for the
+      # complete full-image build on this 16-vCPU runner. Use it for every
+      # compile-bound amd64 Platform build, including PR/manual multi-arch runs.
+      amd64_runner: blacksmith-16vcpu-ubuntu-2404
+      # 16-vCPU ARM measured 5m11s after cache/export optimization; use the
+      # native 32-vCPU tier to keep the complete job below the five-minute budget.
+      arm64_runner: blacksmith-32vcpu-ubuntu-2404-arm
+      # PRs consume publisher caches read-only instead of spending over a minute
+      # rewriting mode=max. Push and manual multi-arch builds still refresh them.
+      export_cache: ${{ github.event_name != 'pull_request' }}
+      # PR images use the faster E2E-proven output; staging/manual stay unchanged.
+      zstd_compression: ${{ github.event_name == 'pull_request' }}
       checkout_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       previous_image: ${{ needs.resolve-previous-platform-image.outputs.previous_image }}
     secrets:
@@ -117,6 +129,21 @@ jobs:
     with:
       push_to_gcr: true
       version: ${{ inputs.version || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+    secrets:
+      GCP_SERVICE_ACCOUNT_NAME: ${{ secrets.DEVELOPMENT_GCP_DEPLOY_SERVICE_ACCOUNT_NAME }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER_IDENTIFIER: ${{ secrets.DEVELOPMENT_GCP_WORKLOAD_IDENTITY_PROVIDER_IDENTIFIER }}
+
+  publish-dev-agent-catalog-images:
+    name: Build Agent Catalog Dev Images
+    if: ${{ github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'deploy-dev-platform-images' && github.event.pull_request.head.repo.fork != true) }}
+    uses: ./.github/workflows/build-agent-catalog-images.yml
+    permissions:
+      contents: read # Required to invoke the reusable Agent image workflow.
+      id-token: write # Required for Workload Identity Federation.
+    with:
+      push_to_gcr: true
+      version: ${{ inputs.version || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+      checkout_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     secrets:
       GCP_SERVICE_ACCOUNT_NAME: ${{ secrets.DEVELOPMENT_GCP_DEPLOY_SERVICE_ACCOUNT_NAME }}
       GCP_WORKLOAD_IDENTITY_PROVIDER_IDENTIFIER: ${{ secrets.DEVELOPMENT_GCP_WORKLOAD_IDENTITY_PROVIDER_IDENTIFIER }}

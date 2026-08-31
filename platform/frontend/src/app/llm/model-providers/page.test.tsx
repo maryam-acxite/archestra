@@ -8,6 +8,12 @@ const mockUseLlmProviderApiKey = vi.fn();
 const mockLlmProviderApiKeyForm = vi.fn();
 const mockUseAllVirtualApiKeys = vi.fn();
 const mockUseLlmOauthClients = vi.fn();
+const { useDataTableQueryParamsMock, updateQueryParamsMock } = vi.hoisted(
+  () => ({
+    useDataTableQueryParamsMock: vi.fn(),
+    updateQueryParamsMock: vi.fn(),
+  }),
+);
 
 vi.mock("next/image", () => ({
   default: ({
@@ -74,10 +80,7 @@ vi.mock("@/lib/docs/docs", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-data-table-query-params", () => ({
-  useDataTableQueryParams: () => ({
-    searchParams: new URLSearchParams(),
-    updateQueryParams: vi.fn(),
-  }),
+  useDataTableQueryParams: () => useDataTableQueryParamsMock(),
 }));
 
 vi.mock("@/components/create-llm-provider-api-key-dialog", () => ({
@@ -272,6 +275,10 @@ import ApiKeysPage from "./page";
 describe("ApiKeysPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useDataTableQueryParamsMock.mockReturnValue({
+      searchParams: new URLSearchParams(),
+      updateQueryParams: updateQueryParamsMock,
+    });
     vi.mocked(usePathname).mockReturnValue("/llm/model-providers");
     vi.mocked(useRouter).mockReturnValue({
       replace: vi.fn(),
@@ -302,25 +309,11 @@ describe("ApiKeysPage", () => {
     });
   });
 
-  it("does not query API keys while read permission is still loading", () => {
-    vi.mocked(useHasPermissions).mockReturnValue({
-      data: false,
-      isPending: true,
-    } as unknown as ReturnType<typeof useHasPermissions>);
-
-    render(<ApiKeysPage />);
-
-    expect(mockUseLlmProviderApiKeys).toHaveBeenCalledWith({
-      enabled: false,
+  it("opens a subscription sign-in linked from an Agent catalog flow", async () => {
+    useDataTableQueryParamsMock.mockReturnValue({
+      searchParams: new URLSearchParams("connect=chatgpt"),
+      updateQueryParams: updateQueryParamsMock,
     });
-    expect(mockUseLlmProviderApiKeys).toHaveBeenCalledWith({
-      enabled: false,
-      provider: undefined,
-      search: undefined,
-    });
-  });
-
-  it("queries API keys after read permission resolves", () => {
     vi.mocked(useHasPermissions).mockReturnValue({
       data: true,
       isPending: false,
@@ -328,14 +321,12 @@ describe("ApiKeysPage", () => {
 
     render(<ApiKeysPage />);
 
-    expect(mockUseLlmProviderApiKeys).toHaveBeenCalledWith({
-      enabled: true,
-    });
-    expect(mockUseLlmProviderApiKeys).toHaveBeenCalledWith({
-      enabled: true,
-      provider: undefined,
-      search: undefined,
-    });
+    await waitFor(() =>
+      expect(updateQueryParamsMock).toHaveBeenCalledWith({ connect: null }),
+    );
+    expect(await screen.findByTestId("create-dialog")).toHaveTextContent(
+      "Sign in with ChatGPT",
+    );
   });
 
   it("still offers subscriptions to a member who cannot read keys", () => {
@@ -378,7 +369,7 @@ describe("ApiKeysPage", () => {
     expect(cards).toHaveTextContent("ChatGPT");
     expect(cards).toHaveTextContent("GitHub Copilot");
     expect(cards).toHaveTextContent("Microsoft 365 Copilot");
-    expect(cards).toHaveTextContent("X Premium (SuperGrok)");
+    expect(cards).toHaveTextContent("SuperGrok");
     expect(screen.getAllByText("Connect")).toHaveLength(4);
     expect(screen.getAllByText("Not connected")).toHaveLength(4);
   });
@@ -396,7 +387,7 @@ describe("ApiKeysPage", () => {
 
     expect(
       screen.getByTestId("subscription-provider-cards"),
-    ).not.toHaveTextContent("X Premium (SuperGrok)");
+    ).not.toHaveTextContent("SuperGrok");
     expect(screen.getAllByText("Connect")).toHaveLength(3);
   });
 
@@ -526,7 +517,7 @@ describe("ApiKeysPage", () => {
       data: [
         {
           id: "x-premium-key",
-          name: "X Premium (SuperGrok)",
+          name: "SuperGrok",
           provider: "xai",
           scope: "personal",
         },
@@ -538,11 +529,11 @@ describe("ApiKeysPage", () => {
 
     // The subscription card remains unconnected and the same-named ordinary key
     // remains its own credential row.
-    expect(screen.getAllByText("X Premium (SuperGrok)")).toHaveLength(2);
+    expect(screen.getAllByText("SuperGrok")).toHaveLength(2);
     expect(screen.getAllByText("Connect")).toHaveLength(4);
   });
 
-  it("reopens an X Premium key from the edit URL param in subscription mode", async () => {
+  it("reopens a SuperGrok key from the edit URL param in subscription mode", async () => {
     // The reviewer-reported F5 case: ?edit=<id> resolves the key through the
     // single-key endpoint, which must carry subscriptionKind so the dialog
     // reopens on the subscription auth mode, not the API-key tab.
@@ -558,7 +549,7 @@ describe("ApiKeysPage", () => {
     mockUseLlmProviderApiKey.mockReturnValue({
       data: {
         id: "x-premium-key",
-        name: "X Premium (SuperGrok)",
+        name: "SuperGrok",
         provider: "xai",
         scope: "personal",
         secretId: "secret-1",
@@ -680,7 +671,7 @@ describe("ApiKeysPage", () => {
     const links = screen.getAllByRole("link", { name: "View all" });
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/llm/proxy/virtual-keys?providerApiKeyId=provider-key-1",
-      "/llm/proxy/oauth-clients?providerApiKeyId=provider-key-1",
+      "/settings/oauth-clients?type=llm&providerApiKeyId=provider-key-1",
     ]);
   });
 
@@ -702,7 +693,7 @@ describe("ApiKeysPage", () => {
     expect(screen.getByTestId("create-dialog")).toHaveTextContent('["openai"]');
   });
 
-  it("uses the registry's X-specific connect copy", () => {
+  it("uses the registry's Grok-specific connect copy", () => {
     vi.mocked(useHasPermissions).mockReturnValue({
       data: true,
       isPending: false,
@@ -712,10 +703,10 @@ describe("ApiKeysPage", () => {
     fireEvent.click(screen.getAllByText("Connect")[3]);
 
     expect(screen.getByTestId("create-dialog")).toHaveTextContent(
-      "Sign in with X",
+      "Sign in with Grok",
     );
     expect(screen.getByTestId("create-dialog")).toHaveTextContent(
-      "Connect the X account that holds your X Premium (SuperGrok) subscription",
+      "Connect your SuperGrok subscription",
     );
   });
 });

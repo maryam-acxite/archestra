@@ -9,6 +9,7 @@ import {
   useProfile,
 } from "@/lib/agent.query";
 import { useHasPermissions } from "@/lib/auth/auth.query";
+import { useFeature } from "@/lib/config/config.query";
 import { useEnvironments } from "@/lib/environment.query";
 import { useAppName } from "@/lib/hooks/use-app-name";
 import { useDefaultEnvironment } from "@/lib/organization.query";
@@ -16,6 +17,7 @@ import { AgentDetailPage } from "./agent-detail-page";
 
 vi.mock("next/navigation");
 vi.mock("@/lib/auth/auth.query");
+vi.mock("@/lib/config/config.query");
 vi.mock("@/lib/hooks/use-app-name");
 vi.mock("@/lib/environment.query");
 vi.mock("@/lib/organization.query");
@@ -32,6 +34,15 @@ vi.mock("./agent-overview", () => ({
 }));
 vi.mock("./agent-connect-content", () => ({
   AgentConnectContent: () => <div>connect content</div>,
+}));
+vi.mock("./agent-background-execution-card", () => ({
+  AgentBackgroundExecutionCard: () => <div>background execution</div>,
+}));
+vi.mock("./agent-system-prompt-card", () => ({
+  AgentSystemPromptCard: () => <div>system prompt editor</div>,
+}));
+vi.mock("./agent-executions", () => ({
+  AgentExecutions: () => <div>execution history</div>,
 }));
 vi.mock("@/components/clone-agent-dialog", () => ({
   CloneAgentDialog: () => null,
@@ -92,6 +103,7 @@ describe("AgentDetailPage", () => {
       data: true,
       isPending: false,
     } as unknown as ReturnType<typeof useHasPermissions>);
+    vi.mocked(useFeature).mockReturnValue(false);
     vi.mocked(useRouter).mockReturnValue({
       push: vi.fn(),
       replace: vi.fn(),
@@ -165,22 +177,24 @@ describe("AgentDetailPage", () => {
     expect(screen.queryByRole("link", { name: "Connect" })).toBeNull();
   });
 
-  it("shows the overview without a click, above the connection instructions, and links to the full configuration", () => {
+  it("shows overview and system prompt editing before connection instructions", () => {
     render(<AgentDetailPage kind="agent" id="a1" />);
 
     expect(screen.getByRole("heading", { name: "Overview" })).toBeVisible();
     const overview = screen.getByText("overview");
+    const systemPrompt = screen.getByText("system prompt editor");
     const connect = screen.getByText("connect content");
     expect(
-      overview.compareDocumentPosition(connect) &
+      overview.compareDocumentPosition(systemPrompt) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    // Same destination as the header's Edit, so Overview is a way in rather
-    // than a second, shorter copy of the form.
-    expect(screen.getByRole("link", { name: /Configuration/ })).toHaveAttribute(
-      "href",
-      "/agents/a1/edit",
-    );
+    expect(
+      systemPrompt.compareDocumentPosition(connect) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Full configuration/i }),
+    ).toHaveAttribute("href", "/agents/a1/edit");
   });
 
   it("keeps the MCP Gateway Overview but moves its environment into the header", () => {
@@ -194,6 +208,13 @@ describe("AgentDetailPage", () => {
     expect(screen.getByRole("heading", { name: "Overview" })).toBeVisible();
     expect(screen.getByText("Production")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Connect" })).toBeNull();
+    expect(screen.queryByText("system prompt editor")).toBeNull();
+  });
+
+  it("keeps the focused system prompt editor on the Agent detail page", () => {
+    render(<AgentDetailPage kind="agent" id="a1" />);
+
+    expect(screen.getByText("system prompt editor")).toBeVisible();
   });
 
   it("omits the connection section for a built-in agent", () => {
@@ -203,5 +224,28 @@ describe("AgentDetailPage", () => {
 
     expect(screen.queryByText("connect content")).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeVisible();
+  });
+
+  it("names delegated task history Executions and opens it from the page header", () => {
+    vi.mocked(useFeature).mockReturnValue(true);
+    mockAgent({ ...baseAgent, backgroundExecution: {} });
+    render(<AgentDetailPage kind="agent" id="a1" />);
+
+    expect(
+      screen
+        .getAllByRole("link", { name: "Executions" })
+        .every(
+          (link) => link.getAttribute("href") === "/agents/a1?tab=executions",
+        ),
+    ).toBe(true);
+    expect(screen.queryByRole("link", { name: "Runs" })).toBeNull();
+  });
+
+  it("keeps execution UI invisible when its feature flag is disabled", () => {
+    mockAgent({ ...baseAgent, backgroundExecution: {} });
+    render(<AgentDetailPage kind="agent" id="a1" />);
+
+    expect(screen.queryByRole("link", { name: "Executions" })).toBeNull();
+    expect(screen.queryByText("background execution")).toBeNull();
   });
 });

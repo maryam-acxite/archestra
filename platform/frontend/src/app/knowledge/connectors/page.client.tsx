@@ -21,6 +21,7 @@ import { CreateConnectorDialog } from "@/app/knowledge/knowledge-bases/_parts/cr
 import { EditConnectorDialog } from "@/app/knowledge/knowledge-bases/_parts/edit-connector-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -179,7 +180,7 @@ function ConnectorsList() {
   // re-pointing "all N" at a different N.
   const filterSignature = `${search}|${connectorTypeFilter}|${isDeletedView}`;
   const allMatchingActive = selectAllMatchingFor === filterSignature;
-  const { effectiveRowSelection, onRowSelectionChange } =
+  const { effectiveRowSelection, onRowSelectionChange, rangeSelection } =
     useControlledRowSelection({
       rowSelection,
       setRowSelection,
@@ -193,6 +194,7 @@ function ConnectorsList() {
     getRowId: (connector) => connector.id,
     rowSelection: effectiveRowSelection,
     setRowSelection: onRowSelectionChange,
+    rangeSelection,
   });
   const { data: allMatching, isFetching: isFetchingAllMatching } =
     useAllMatchingConnectors(
@@ -426,10 +428,9 @@ function ConnectorsList() {
     >
       <TableCardView storageKey="archestra-connectors-view">
         <div>
-          <div
-            className={`${!isDeletedView && !isConnectorsLoadError ? "mb-3" : "mb-6"} flex flex-col gap-2`}
-          >
+          <CollectionFilters>
             <FilterBar
+              leading
               actions={!isDeletedView ? <TableCardViewToggle /> : undefined}
             >
               <SearchInput
@@ -466,7 +467,7 @@ function ConnectorsList() {
                 deletePermission={{ knowledgeSource: ["delete"] }}
               />
             </FilterBar>
-          </div>
+          </CollectionFilters>
 
           {isConnectorsLoadError ? (
             <QueryLoadError
@@ -549,6 +550,9 @@ function ConnectorsList() {
                             {connector.name}
                           </Link>
                         }
+                        onNavigate={() =>
+                          router.push(`/knowledge/connectors/${connector.id}`)
+                        }
                         description={connector.description}
                         actions={connectorActions(connector)}
                         {...cardSelection(connector)}
@@ -584,6 +588,7 @@ function ConnectorsList() {
                     onRowSelectionChange={
                       isDeletedView ? undefined : onRowSelectionChange
                     }
+                    rangeSelection={rangeSelection}
                     // The deleted view always counts as filtered (see
                     // hasActiveFilters), so its empty state is the filtered one below.
                     emptyIcon={Database}

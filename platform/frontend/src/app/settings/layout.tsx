@@ -15,10 +15,20 @@ const PAGE_CONFIG: Record<string, { title: string; description: ReactNode }> = {
     description:
       "Organization-owned identities for automation. Each service account has a role and its own API keys for the platform API.",
   },
+  "/settings/oauth-clients": {
+    title: "OAuth Clients",
+    description:
+      "Applications that authenticate with OAuth rather than a person signing in — to the LLM Proxy, or to your MCP gateways and agents. Each client is scoped to the resources it may reach.",
+  },
   "/settings/agents": {
     title: "Agents",
     description:
       "Defaults for agents and chats — default model, default agent, file uploads, and the channels agents can be reached through.",
+  },
+  "/settings/messaging-channels": {
+    title: "Messaging Channels",
+    description:
+      "Configure the providers that carry agent conversations. Channel-to-agent assignments are managed on each agent's page.",
   },
   "/settings/apps": {
     title: "Apps",
@@ -170,12 +180,16 @@ export default function SettingsLayout({
   // Route-derived default. A record page overrides it via `setPageHeader` once
   // it knows its subject; until then the prefix match keeps a detail page
   // under a section reading as that section rather than as bare "Settings".
-  const config = pathname.startsWith("/settings/service-accounts/")
-    ? PAGE_CONFIG["/settings/service-accounts"]
-    : (PAGE_CONFIG[pathname] ?? {
+  const sectionHref = resolveSettingsSection(pathname, tabs);
+  const config = sectionHref
+    ? (PAGE_CONFIG[sectionHref] ?? {
         title: "Settings",
         description: "Configure your platform, teams, and integrations.",
-      });
+      })
+    : {
+        title: "Settings",
+        description: "Configure your platform, teams, and integrations.",
+      };
 
   const contextValue = useMemo(() => ({ setActionButton, setPageHeader }), []);
 
@@ -193,11 +207,13 @@ export default function SettingsLayout({
             above it: at sixteen entries the row scrolled sideways, so the
             settings you were not already looking at were off-screen. */}
         <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <SectionNav
-            label="Settings sections"
-            items={tabs}
-            activeHref={resolveSettingsSection(pathname, tabs)}
-          />
+          <div className="min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:rounded-lg scrollbar-sidebar">
+            <SectionNav
+              label="Settings sections"
+              items={tabs}
+              activeHref={sectionHref}
+            />
+          </div>
           <div className="min-w-0">{children}</div>
         </div>
       </PageLayout>

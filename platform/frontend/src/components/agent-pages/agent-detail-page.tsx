@@ -23,6 +23,7 @@ import { AgentVersionHistoryDialog } from "@/components/agent-version-history-di
 import { CloneAgentDialog } from "@/components/clone-agent-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { OverviewSummary } from "@/components/overview-summary";
+import { PageBackLink } from "@/components/page-back-link";
 import { PageLayout } from "@/components/page-layout";
 import { QueryLoadError } from "@/components/query-load-error";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ import {
 } from "@/lib/agent.query";
 import { useHasPermissions } from "@/lib/auth/auth.query";
 import { formatPermissionConstraint } from "@/lib/auth/auth.utils";
+import { useFeature } from "@/lib/config/config.query";
 import {
   backToListLabel,
   notYoursToChange,
@@ -61,7 +63,9 @@ import {
   agentActionHref,
   getAgentActionModel,
 } from "./agent-actions-model";
+import { AgentBackgroundExecutionCard } from "./agent-background-execution-card";
 import { AgentConnectContent } from "./agent-connect-content";
+import { AgentExecutions } from "./agent-executions";
 import { useAgentOverviewFacts } from "./agent-overview";
 import {
   AGENT_PAGE_CONFIGS,
@@ -72,7 +76,7 @@ import {
   agentPageKindForType,
   isAgentTypeAllowedOnPage,
 } from "./agent-page-config";
-import { BackLink } from "./agent-page-shell";
+import { AgentSystemPromptCard } from "./agent-system-prompt-card";
 import { useAgentAccess } from "./use-agent-access";
 
 /**
@@ -110,7 +114,9 @@ export function AgentDetailPage({
   }, [agent, kind, id, router]);
 
   const backLink = (
-    <BackLink href={agentListHref(kind)}>{backToListLabel(kind)}</BackLink>
+    <PageBackLink href={agentListHref(kind)}>
+      {backToListLabel(kind)}
+    </PageBackLink>
   );
 
   if (isPending || (isLeavingAfterDelete && !agent)) {
@@ -120,6 +126,7 @@ export function AgentDetailPage({
         description=""
         backLink={backLink}
         maxWidth="wizard"
+        minWidth="phone"
       >
         <DetailPageSkeleton />
       </PageLayout>
@@ -136,6 +143,7 @@ export function AgentDetailPage({
         description=""
         backLink={backLink}
         maxWidth="wizard"
+        minWidth="phone"
       >
         <QueryLoadError
           className="border"
@@ -153,6 +161,7 @@ export function AgentDetailPage({
         description=""
         backLink={backLink}
         maxWidth="wizard"
+        minWidth="phone"
       >
         <Empty className="border">
           <EmptyHeader>
@@ -236,6 +245,15 @@ function AgentDetails({
 
   const showConnect = connectAction.visible;
   const legacyConnectRequested = searchParams.get("tab") === "connect";
+  const backgroundExecutionEnabled =
+    useFeature("agentBackgroundExecution") === true;
+  const hasBackgroundExecution =
+    backgroundExecutionEnabled &&
+    kind === "agent" &&
+    agent.backgroundExecution != null;
+  const showingExecutions =
+    hasBackgroundExecution && searchParams.get("tab") === "executions";
+  const detailHref = agentDetailHref(kind, agent.id);
 
   useEffect(() => {
     if (!legacyConnectRequested || !showConnect) return;
@@ -317,6 +335,7 @@ function AgentDetails({
     <PageLayout
       // The wizard's column, so Edit opens in the same one this page reads in.
       maxWidth="wizard"
+      minWidth="phone"
       title={
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
@@ -341,6 +360,22 @@ function AgentDetails({
       documentTitle={agent.name}
       backLink={backLink}
       description={agent.description ?? ""}
+      tabs={
+        hasBackgroundExecution
+          ? [
+              {
+                label: "Overview",
+                href: detailHref,
+                selected: !showingExecutions,
+              },
+              {
+                label: "Executions",
+                href: `${detailHref}?tab=executions`,
+                selected: showingExecutions,
+              },
+            ]
+          : []
+      }
       actionButton={
         // One primary (Edit), one secondary (Chat), the rest in the kebab with
         // the destructive item under a divider.
@@ -441,26 +476,51 @@ function AgentDetails({
         two titled sections now fell between the Overview card and Endpoint —
         40px there against 16px between every card below it.
       */}
-      <div className="space-y-4">
-        <OverviewSummary
-          headingId="agent-overview-heading"
-          facts={overviewFacts}
-          configHref={canEdit ? agentActionHref(editAction) : undefined}
-        />
+      {showingExecutions ? (
+        <AgentExecutions agentId={agent.id} />
+      ) : (
+        <div className="space-y-4">
+          <OverviewSummary
+            headingId="agent-overview-heading"
+            facts={overviewFacts}
+            configHref={canEdit ? agentActionHref(editAction) : undefined}
+            configLabel="Full configuration"
+          />
 
-        {showConnect && (
-          // No heading of its own: the cards inside are already titled
-          // "Endpoint" and "Authentication", and a "Connect" band above them
-          // named neither, while colliding with the Connect page the footer
-          // link points at.
-          <section
-            id={AGENT_CONNECT_SECTION_ID}
-            className="scroll-mt-24 space-y-4"
-          >
-            <AgentConnectContent kind={kind} agent={agent} origin="table" />
-          </section>
-        )}
-      </div>
+          {kind === "agent" && (
+            <AgentSystemPromptCard
+              key={agent.id}
+              agent={agent}
+              readOnly={!canEdit}
+              builtInAgentName={agent.builtInAgentConfig?.name}
+            />
+          )}
+
+          {hasBackgroundExecution && (
+            <AgentBackgroundExecutionCard
+              agentId={agent.id}
+              credentials={agent.backgroundExecution?.credentials ?? []}
+              readOnly
+              editHref={
+                canEdit ? agentEditHref(kind, agent.id, "advanced") : undefined
+              }
+            />
+          )}
+
+          {showConnect && (
+            // No heading of its own: the cards inside are already titled
+            // "Endpoint" and "Authentication", and a "Connect" band above them
+            // named neither, while colliding with the Connect page the footer
+            // link points at.
+            <section
+              id={AGENT_CONNECT_SECTION_ID}
+              className="scroll-mt-24 space-y-4"
+            >
+              <AgentConnectContent kind={kind} agent={agent} origin="table" />
+            </section>
+          )}
+        </div>
+      )}
 
       <CloneAgentDialog
         agent={cloning ? agent : null}

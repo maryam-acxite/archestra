@@ -27,6 +27,7 @@ import { type MouseEventHandler, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { McpCatalogIcon } from "@/components/mcp-catalog-icon";
 import { ResourceVisibilityBadge } from "@/components/resource-visibility-badge";
+import { TableCard } from "@/components/table-card-view";
 import {
   Avatar,
   AvatarFallback,
@@ -35,8 +36,6 @@ import {
 } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -56,12 +55,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { TruncatedTooltip } from "@/components/ui/truncated-tooltip";
 import { LOCAL_MCP_DISABLED_MESSAGE } from "@/consts";
 import { useHasPermissions, useSession } from "@/lib/auth/auth.query";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useFeature } from "@/lib/config/config.query";
-import { typeRole } from "@/lib/design/type-scale";
 import { useEnvironments } from "@/lib/environment.query";
 import { useReinstallInternalMcpCatalogItem } from "@/lib/mcp/internal-mcp-catalog.query";
 import type { McpDeploymentFeedState } from "@/lib/mcp/mcp-server.query";
@@ -71,7 +68,6 @@ import {
   type McpServerIssue,
 } from "@/lib/mcp/mcp-server-issues";
 import { useCanReauthenticate } from "@/lib/mcp/use-can-reauthenticate";
-import { useDefaultEnvironment } from "@/lib/organization.query";
 import { useAssignableTeams } from "@/lib/teams/team.query";
 import { isCardShowingInstallInProgress } from "./card-install-state";
 import { useCanModifyCatalogItem } from "./catalog-edit-access";
@@ -80,10 +76,7 @@ import { resolveCatalogEnvironmentLabel } from "./catalog-environment-label";
 import { shouldShowMcpCardChatButton } from "./chat-button-visibility";
 import {
   computeDeploymentStatusSummary,
-  DeploymentStatusDot,
-  getDeploymentStatusAriaLabel,
-  getDeploymentStatusChipLabel,
-  getDeploymentStatusTooltipCopy,
+  DeploymentStatusIconDot,
   STATE_PRIORITY,
 } from "./deployment-status";
 import { CatalogEditNoAccess } from "./edit-catalog-dialog";
@@ -94,7 +87,8 @@ import {
   agentOwnerLabel,
   deriveAgentUsage,
 } from "./mcp-server-agent-usage";
-import { McpServerIssueStatusCell } from "./mcp-server-issue-badge";
+import { McpServerIssueBadge } from "./mcp-server-issue-badge";
+import { McpServerIssueNotice } from "./mcp-server-issue-notice";
 import { OAuthReauthIndicator } from "./oauth-reauth-indicator";
 import {
   UninstallServerDialog,
@@ -150,6 +144,7 @@ export type McpServerCardProps = {
     onSelectedChange: (selected: boolean) => void;
     onSelectionClick: MouseEventHandler<HTMLButtonElement>;
     disabled?: boolean;
+    disabledTooltip?: string;
   };
 };
 
@@ -166,7 +161,7 @@ export function McpServerCard({
   installingItemId,
   installationStatus,
   deploymentStatuses,
-  deploymentFeedState,
+  deploymentFeedState: _deploymentFeedState,
   issues,
   onInstallRemoteServer,
   onInstallLocalServer,
@@ -185,20 +180,16 @@ export function McpServerCard({
   const currentUserId = session?.user?.id;
   const isLocalMcpEnabled = useFeature("orchestratorK8sRuntime");
 
-  // Environment label shown next to the title. Only surfaced once the org has
-  // more than the single implicit Default environment; Default-assigned items
-  // only show it when Default has been renamed. Built-in (Playwright) servers
-  // aren't environment-scoped, so skip them. Both queries are shared/cached, so
-  // calling them per card doesn't fan out requests.
+  // A named, explicit environment is useful placement information. The
+  // implicit Default is the baseline and stays unlabeled. Built-in servers
+  // aren't environment-scoped, so skip them.
   const { data: environmentList } = useEnvironments();
-  const defaultEnvironment = useDefaultEnvironment();
   const environmentLabel =
     variant === "builtin"
       ? null
       : resolveCatalogEnvironmentLabel({
           environmentId: item.environmentId,
           environments: environmentList?.environments ?? [],
-          defaultEnvironmentName: defaultEnvironment.name,
         });
 
   // Whether the current user can edit this catalog item: an admin, a team-admin
@@ -268,7 +259,6 @@ export function McpServerCard({
     const qs = params.toString();
     router.push(`/mcp/registry/${item.id}${qs ? `?${qs}` : ""}`);
   };
-
   // ── Shareable edit deep-link (`?edit=<catalogId>`) ──────────────────────
   // Legacy links: the editor now lives on the item detail page, so a shared
   // `?edit=<id>` link redirects there for users who can edit, and shows a
@@ -360,7 +350,7 @@ export function McpServerCard({
       permissions={{ mcpServerInstallation: ["delete"] }}
       variant="outline"
       size="sm"
-      className="flex-1"
+      className="flex-1 px-2.5"
       onClick={handleUninstallClick}
     >
       Uninstall
@@ -527,18 +517,21 @@ export function McpServerCard({
     deploymentServerIds,
     effectiveDeploymentStatuses,
   );
-  // SPDX-SnippetBegin
-  // SPDX-SnippetCopyrightText: 2026 Archestra Inc.
-  // SPDX-License-Identifier: LicenseRef-Archestra-Enterprise
-  // Non-null only for the idle states, which is also what gates the tooltip.
-  const deploymentIdleCopy = deploymentSummary
-    ? getDeploymentStatusTooltipCopy(deploymentSummary.overallState)
-    : null;
-  // SPDX-SnippetEnd
+  const deploymentStatusIndicator = deploymentSummary ? (
+    <DeploymentStatusIconDot summary={deploymentSummary} />
+  ) : null;
   // Worst live issue first, since issues are kind-ordered; an item whose only
   // trouble the viewer muted still shows it, muted.
   const statusIssue =
     issues?.find((issue) => !issue.muted) ?? issues?.[0] ?? null;
+  const primaryIssueAction = statusIssue ? (
+    <McpServerIssueNotice
+      item={item}
+      issues={issues ?? []}
+      servers={allServersForCatalog}
+      variant="primary-action"
+    />
+  ) : null;
   const toolsCount = item.toolCount ?? 0;
 
   const chatButton = shouldShowMcpCardChatButton({
@@ -570,33 +563,6 @@ export function McpServerCard({
     >
       <Pencil className="h-4 w-4" />
     </Button>
-  );
-
-  const selectionCheckbox = selection ? (
-    <Checkbox
-      checked={selection.selected}
-      disabled={selection.disabled}
-      aria-label={`Select ${item.name}`}
-      onCheckedChange={(checked) =>
-        selection.onSelectedChange(checked === true)
-      }
-      onClick={(event) => selection.onSelectionClick(event)}
-    />
-  ) : null;
-  const selectionControl = selection?.disabled ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="inline-flex cursor-not-allowed"
-          title="Wait for installation to finish"
-        >
-          {selectionCheckbox}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>Wait for installation to finish</TooltipContent>
-    </Tooltip>
-  ) : (
-    selectionCheckbox
   );
 
   // A 4th connection folds into the +N count rather than lengthening the
@@ -650,14 +616,10 @@ export function McpServerCard({
   }
   const extraCount = connectionAvatars.length - MAX_AVATARS;
 
-  // Who can reach this catalog item. Personal items of the viewer's own say
-  // nothing new — the grid already groups them under a "Personal" heading, so
-  // the badge is asked not to label them "Me" (`showSelfAsMe={false}`) and
-  // renders null for that case; the gate mirrors it to keep the row from
-  // reserving space for an empty badge.
-  const showScopeBadge =
-    item.scope !== "personal" ||
-    Boolean(item.authorId && item.authorId !== currentUserId);
+  // Cards are one mixed list. Like Apps and Projects, every row names its
+  // visibility so personal entries never rely on a removed ownership heading.
+  const showScopeBadge = Boolean(item.scope);
+  const showApprovalPanel = item.imageApprovalRequired === true;
 
   /** Who is connected and whether a connection needs attention. */
   const hasTrailingCluster =
@@ -668,29 +630,61 @@ export function McpServerCard({
 
   /** Whether anything follows the badge in the row. */
   const hasCompactInfoAfterScopeBadge =
-    toolsCount > 0 ||
-    totalAgentCount > 0 ||
-    (variant === "local" && deploymentServerIds.length > 0) ||
-    hasTrailingCluster;
+    toolsCount > 0 || totalAgentCount > 0 || hasTrailingCluster;
+  const hasCardMetadata = Boolean(
+    environmentLabel ||
+      statusIssue ||
+      item.providesUi ||
+      item.providesSkills ||
+      showApprovalPanel,
+  );
 
-  const hasCompactInfoContent = showScopeBadge || hasCompactInfoAfterScopeBadge;
+  const hasCompactInfoContent =
+    hasCardMetadata || showScopeBadge || hasCompactInfoAfterScopeBadge;
 
   /*
-    One line, and it has to stay one line at the grid's card width — which
-    leaves it roughly 250-300px to seat a scope badge, two counts, a deployment
-    state and a stack of connection avatars. Two rules keep it there.
+    This usually fits on one line at the grid's card width, but operational
+    states can add several badges and connection avatars at once. Let those
+    fixed items wrap rather than paint outside a single-column card.
 
     Fixed items are `shrink-0` and the badge is the single elastic cell, so
     pressure lands on the one thing that can absorb it — a long author or team
-    name truncates (its `title` keeps it readable) instead of every item
-    refusing to shrink and the row spilling over the card edge.
+    name truncates (its `title` keeps it readable) before the row wraps.
 
     Nothing separates the items but the gap. The 1px rules that used to sit
     between them cost ~21px each once their two gaps are counted — around a
     fifth of the row — which is most of what a name has to truncate into.
   */
   const compactInfoRow = hasCompactInfoContent ? (
-    <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+      {environmentLabel && (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          <span className="max-w-32 truncate">{environmentLabel}</span>
+        </Badge>
+      )}
+      {statusIssue && (
+        <span
+          className="shrink-0"
+          data-testid={
+            statusIssue.kind === "failed-to-start"
+              ? `${E2eTestId.McpServerError}-${item.name}-default`
+              : undefined
+          }
+        >
+          <McpServerIssueBadge issue={statusIssue} />
+        </span>
+      )}
+      <McpCapabilityBadges
+        providesUi={item.providesUi}
+        providesSkills={item.providesSkills}
+        skillCount={item.skillCount}
+        className="shrink-0"
+      />
+      {showApprovalPanel && (
+        <Badge variant="outline" className="shrink-0">
+          Image needs approval
+        </Badge>
+      )}
       {showScopeBadge && (
         <div className="flex min-w-0 items-center">
           <ResourceVisibilityBadge
@@ -699,7 +693,7 @@ export function McpServerCard({
             authorId={item.authorId}
             authorName={item.authorName}
             currentUserId={currentUserId}
-            showSelfAsMe={false}
+            showSelfAsMe
             compact
           />
         </div>
@@ -767,57 +761,6 @@ export function McpServerCard({
           </HoverCard>
         </>
       )}
-      {variant === "local" &&
-        deploymentServerIds.length > 0 &&
-        // No Kubernetes runtime on this deployment means no pod will ever
-        // report, which is not the same as a report failing to arrive. The
-        // table says "Installed" for the same case; the card, which has no
-        // status text of its own, simply leaves the runtime chip off rather
-        // than accusing every local server of being unreachable.
-        deploymentFeedState !== "disabled" &&
-        (deploymentSummary ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => goToItemPage("logs")}
-                  aria-label={getDeploymentStatusAriaLabel({
-                    summary: deploymentSummary,
-                    serverName: item.name,
-                  })}
-                  className="flex shrink-0 items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors"
-                >
-                  <DeploymentStatusDot state={deploymentSummary.overallState} />
-                  <span aria-hidden>
-                    {getDeploymentStatusChipLabel({
-                      summary: deploymentSummary,
-                      format: "ratio",
-                    })}
-                  </span>
-                </button>
-              </TooltipTrigger>
-              {/* SPDX-SnippetBegin */}
-              {/* SPDX-SnippetCopyrightText: 2026 Archestra Inc. */}
-              {/* SPDX-License-Identifier: LicenseRef-Archestra-Enterprise */}
-              {deploymentIdleCopy && (
-                <TooltipContent className="max-w-md break-words">
-                  {deploymentIdleCopy}
-                </TooltipContent>
-              )}
-              {/* SPDX-SnippetEnd */}
-            </Tooltip>
-          </TooltipProvider>
-        ) : deploymentFeedState === "loading" ? (
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-muted-foreground/50 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-muted-foreground/50" />
-          </span>
-        ) : (
-          // The feed has settled and still knows nothing about this server's
-          // pods, which is a different thing from the pods being fine.
-          <span className={typeRole({ role: "meta" })}>Status unavailable</span>
-        ))}
       {/*
         Trailing cluster, pushed to the card's right edge by `ml-auto` so the
         avatar stacks line up down a column of cards instead of each starting
@@ -935,14 +878,10 @@ export function McpServerCard({
     </PermissionButton>
   );
 
-  // The trusted-image-registry policy holds this catalog's image until an admin
-  // approves it. Declared before the card-content variants since they gate the
-  // reinstall button on it.
-  const showApprovalPanel = item.imageApprovalRequired === true;
-
   const remoteCardContent = (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 [&>*]:min-w-0">
+        {primaryIssueAction}
         {chatButton}
         {!isInstalling && isCurrentUserAuthenticated && needsReinstall && (
           <PermissionButton
@@ -1012,7 +951,8 @@ export function McpServerCard({
 
   const localCardContent = (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 [&>*]:min-w-0">
+        {primaryIssueAction}
         {chatButton}
         {!isInstalling && showCombinedReinstall && (
           <PermissionButton
@@ -1043,7 +983,8 @@ export function McpServerCard({
 
   const playwrightCardContent = (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 [&>*]:min-w-0">
+        {primaryIssueAction}
         {chatButton}
         {!isInstalling && isCurrentUserAuthenticated && needsReinstall && (
           <PermissionButton
@@ -1070,7 +1011,10 @@ export function McpServerCard({
 
   const builtinCardContent = (
     <>
-      <div>{chatButton}</div>
+      <div className="flex flex-nowrap gap-2 [&>*]:min-w-0">
+        {primaryIssueAction}
+        {chatButton}
+      </div>
     </>
   );
 
@@ -1104,163 +1048,77 @@ export function McpServerCard({
     </>
   );
 
-  return (
-    <Card
-      // `overflow-hidden` is a backstop, not the fix: the rows inside are laid
-      // out to fit. It means that if some future combination still doesn't,
-      // the card clips it instead of painting it over its neighbour.
-      className={`flex flex-col relative pt-4 gap-4 h-full overflow-hidden ${selection?.selected ? "border-primary bg-primary/5" : ""}`}
-      data-testid={`${E2eTestId.McpServerCard}-${item.name}`}
+  const approvalAction = showApprovalPanel ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-full"
+      onClick={
+        isInstallAdmin
+          ? () => router.push(`/mcp/registry/${item.id}/edit`)
+          : copyApprovalLink
+      }
     >
-      <CardHeader className="gap-0">
-        <div className="flex items-start justify-between gap-4 overflow-hidden">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1 overflow-hidden w-full">
-              {/* The name opens the server's page, as a table row does: the
-                  card itself is too full of its own controls to be one link. */}
-              <Link
-                href={`/mcp/registry/${item.id}`}
-                className="flex min-w-0 items-center gap-2 rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <McpCatalogIcon
-                  icon={item.icon}
-                  catalogId={item.id}
-                  size={20}
-                />
-                <TruncatedTooltip content={item.name}>
-                  <span className="text-lg font-semibold whitespace-nowrap text-ellipsis overflow-hidden">
-                    {item.name}
-                  </span>
-                </TruncatedTooltip>
-              </Link>
-              {environmentLabel && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 text-muted-foreground"
-                >
-                  <span className="max-w-32 truncate">{environmentLabel}</span>
-                </Badge>
-              )}
-            </div>
-            {item.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2">
-                {item.description}
-              </p>
-            )}
-            <McpCapabilityBadges
-              providesUi={item.providesUi}
-              providesSkills={item.providesSkills}
-              skillCount={item.skillCount}
-              className="mt-2"
-            />
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {selectionControl}
-            {canEditCatalog && settingsButton}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 flex-grow">
-        {showApprovalPanel && (
-          <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2.5">
-            <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-500">
-              <span>
-                {isInstallAdmin
-                  ? "Image needs approval"
-                  : "Admin review required"}
-              </span>
-              {isInstallAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => router.push(`/mcp/registry/${item.id}/edit`)}
-                  title="Review config"
-                  aria-label="Review config"
-                  className="shrink-0 rounded p-0.5 hover:bg-amber-500/10"
-                >
-                  <FileSearch className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={copyApprovalLink}
-                  title="Copy link"
-                  aria-label="Copy link"
-                  className="shrink-0 rounded p-0.5 hover:bg-amber-500/10"
-                >
-                  <Copy className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {allServersForCatalog.length > 0
-                ? "The Docker image was changed to one that isn't from a trusted registry. Existing connections keep running the previous image until an admin approves."
-                : isInstallAdmin
-                  ? "This MCP server Docker image isn't from a trusted image registry. Review and approve configuration to allow installs."
-                  : "This MCP server Docker image isn't from a trusted image registry. An admin must approve it before it can be installed."}
-            </p>
-          </div>
-        )}
-        {statusIssue && (
-          <div
-            className="flex items-start gap-2 rounded-md border bg-muted/50 px-3 py-2"
-            data-testid={
-              statusIssue.kind === "failed-to-start"
-                ? `${E2eTestId.McpServerError}-${item.name}-default`
-                : undefined
-            }
-          >
-            {/* The card is a summary tile: the same badge and one-line cause
-                the table's Status column shows, so a server reads the same
-                whichever view you are in. The full diagnosis, with the fix and
-                the verbs, lives on the server's Overview. Multi-tenant
-                siblings are already collapsed into one issue upstream, which
-                is what used to need a dedup pass here. */}
-            <McpServerIssueStatusCell
-              issue={statusIssue}
-              className="min-w-0 flex-1"
-            />
-            {variant === "local" && statusIssue.serverId && (
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto shrink-0 p-0 text-xs"
-                data-testid={`${E2eTestId.McpLogsViewButton}-${item.name}-default`}
-                onClick={() => goToItemPage("logs", statusIssue.serverId)}
-              >
-                View logs
-              </Button>
-            )}
-          </div>
-        )}
-        {variant === "local" && isInstalling && (
-          <div className="bg-muted/50 rounded-md overflow-hidden">
-            <div className="px-3 py-2">
-              <InstallationProgress
-                status={
-                  installationStatus === "error"
-                    ? null
-                    : (installationStatus ?? null)
-                }
-                serverId={installedServer?.id}
-                deploymentStatuses={deploymentStatuses}
-                onMoreDetails={() => goToItemPage("logs", installedServer?.id)}
-              />
-            </div>
-          </div>
-        )}
-        <div className="mt-auto flex flex-col gap-4">
-          {compactInfoRow}
-          {isBuiltinVariant
-            ? builtinCardContent
-            : isPlaywrightVariant
-              ? playwrightCardContent
-              : isRemoteVariant
-                ? remoteCardContent
-                : localCardContent}
-        </div>
-      </CardContent>
+      {isInstallAdmin ? <FileSearch /> : <Copy />}
+      <span>{isInstallAdmin ? "Review config" : "Copy approval link"}</span>
+    </Button>
+  ) : null;
+  const cardActions =
+    approvalAction ??
+    (isBuiltinVariant
+      ? builtinCardContent
+      : isPlaywrightVariant
+        ? playwrightCardContent
+        : isRemoteVariant
+          ? remoteCardContent
+          : localCardContent);
+  const hasCardBody = Boolean(
+    compactInfoRow || (variant === "local" && isInstalling),
+  );
+  const cardBody = hasCardBody ? (
+    <div className="space-y-3">
+      {compactInfoRow}
+      {variant === "local" && isInstalling && (
+        <InstallationProgress
+          status={
+            installationStatus === "error" ? null : (installationStatus ?? null)
+          }
+          serverId={installedServer?.id}
+          deploymentStatuses={deploymentStatuses}
+          onMoreDetails={() => goToItemPage("logs", installedServer?.id)}
+        />
+      )}
+    </div>
+  ) : undefined;
+
+  return (
+    <>
+      <TableCard
+        testId={`${E2eTestId.McpServerCard}-${item.name}`}
+        title={item.name}
+        description={item.description}
+        icon={
+          <span className="relative flex size-9 items-center justify-center overflow-hidden rounded-lg border bg-muted/30">
+            <McpCatalogIcon icon={item.icon} catalogId={item.id} size={20} />
+            {deploymentStatusIndicator}
+          </span>
+        }
+        actions={canEditCatalog ? settingsButton : undefined}
+        selected={selection?.selected}
+        selectionDisabled={selection?.disabled}
+        selectionDisabledTooltip={selection?.disabledTooltip}
+        onSelectedChange={selection?.onSelectedChange}
+        onSelectionClick={selection?.onSelectionClick}
+        selectionLabel={selection ? `Select ${item.name}` : undefined}
+        onNavigate={() => goToItemPage()}
+        footer={cardActions}
+        density="compact"
+      >
+        {cardBody}
+      </TableCard>
       {dialogs}
-    </Card>
+    </>
   );
 }
 

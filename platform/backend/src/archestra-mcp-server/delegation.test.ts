@@ -7,6 +7,7 @@ import {
   slugify,
 } from "@archestra/shared";
 import { vi } from "vitest";
+import config from "@/config";
 import db, { schema } from "@/database";
 import {
   AgentExcludedSubagentModel,
@@ -20,10 +21,19 @@ import type { Agent } from "@/types";
 import { type ArchestraContext, executeArchestraTool, getAgentTools } from ".";
 
 const mockExecuteA2AMessage = vi.fn();
+const mockStartDelegatedTask = vi.fn();
 
 vi.mock("@/agents/a2a-executor", () => ({
   executeA2AMessage: (...args: unknown[]) => mockExecuteA2AMessage(...args),
 }));
+vi.mock("@/archestra-mcp-server/tasks", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/archestra-mcp-server/tasks")>();
+  return {
+    ...actual,
+    startDelegatedTask: (...args: unknown[]) => mockStartDelegatedTask(...args),
+  };
+});
 
 describe("delegation tool execution", () => {
   let testAgent: Agent;
@@ -93,6 +103,161 @@ describe("delegation tool execution", () => {
     expect(text).toContain("No delegation is configured");
     expect(text).toContain(`${AGENT_TOOL_PREFIX}*`);
     expect(text).toContain("Do not guess delegation names");
+  });
+
+  test("runs an ordinary delegation as a durable task when the target has Background execution", async ({
+    makeAgent,
+    makeAgentTool,
+  }) => {
+    const previous = config.agentBackgroundExecution.enabled;
+    config.agentBackgroundExecution.enabled = true;
+    const targetAgent = await makeAgent({
+      name: "Background Worker",
+      backgroundExecution: {
+        image: "example.invalid/background-worker:test",
+        command: null,
+        inferenceProtocol: "openai_responses",
+        backend: "kubernetes",
+        steerMode: "pipe",
+        privileged: false,
+        resources: null,
+        environment: null,
+        credentials: null,
+        ttlHours: null,
+        idleTimeoutMinutes: null,
+      },
+    });
+    const delegationTool = await ToolModel.findOrCreateDelegationTool(
+      targetAgent.id,
+    );
+    await makeAgentTool(testAgent.id, delegationTool.id);
+    mockStartDelegatedTask.mockResolvedValue({
+      content: [{ type: "text", text: "Task task-1 started" }],
+      isError: false,
+    });
+    const context = {
+      ...mockContext,
+      userId: "user-1",
+      sessionId: "chatops:slack:thread-1",
+      chatOpsBindingId: "binding-1",
+      chatOpsThreadId: "thread-1",
+    };
+
+    try {
+      const result = await executeArchestraTool(
+        `${AGENT_TOOL_PREFIX}${slugify(targetAgent.name)}`,
+        { message: "Implement the change." },
+        context,
+      );
+
+      expect(result.isError).toBe(false);
+      expect(mockStartDelegatedTask).toHaveBeenCalledWith({
+        agentId: targetAgent.id,
+        message: "Implement the change.",
+        context,
+      });
+      expect(mockExecuteA2AMessage).not.toHaveBeenCalled();
+    } finally {
+      config.agentBackgroundExecution.enabled = previous;
+    }
+  });
+
+  test("lets a foreground router hand a nested delegation to a Background execution worker", async ({
+    makeAgent,
+    makeAgentTool,
+  }) => {
+    const previous = config.agentBackgroundExecution.enabled;
+    config.agentBackgroundExecution.enabled = true;
+    const router = await makeAgent({ name: "Coding Task Router" });
+    const worker = await makeAgent({
+      name: "Selected Coding Worker",
+      backgroundExecution: {
+        image: "example.invalid/coding-worker:test",
+        command: ["coding-worker"],
+        inferenceProtocol: "openai_responses",
+        backend: "kubernetes",
+        steerMode: "pipe",
+        privileged: false,
+        resources: null,
+        environment: null,
+        credentials: null,
+        ttlHours: null,
+        idleTimeoutMinutes: null,
+      },
+    });
+    const routerTool = await ToolModel.findOrCreateDelegationTool(router.id);
+    const workerTool = await ToolModel.findOrCreateDelegationTool(worker.id);
+    await makeAgentTool(testAgent.id, routerTool.id);
+    await makeAgentTool(router.id, workerTool.id);
+
+    const rootContext = {
+      ...mockContext,
+      userId: "user-1",
+      sessionId: "chatops:slack:thread-1",
+      chatOpsBindingId: "binding-1",
+      chatOpsThreadId: "thread-1",
+    };
+    mockStartDelegatedTask.mockResolvedValue({
+      content: [{ type: "text", text: "Task task-1 started" }],
+      isError: false,
+    });
+    mockExecuteA2AMessage.mockImplementationOnce(async (params) => {
+      const nestedContext: ArchestraContext = {
+        agent: { id: router.id, name: router.name },
+        agentId: router.id,
+        organizationId: params.organizationId,
+        userId: params.userId,
+        sessionId: params.sessionId,
+        delegationChain: `${params.parentDelegationChain}:${router.id}`,
+        chatOpsBindingId: params.chatOpsBindingId,
+        chatOpsThreadId: params.chatOpsThreadId,
+      };
+      const nestedResult = await executeArchestraTool(
+        `${AGENT_TOOL_PREFIX}${slugify(worker.name)}`,
+        { message: "Run the complete original task." },
+        nestedContext,
+      );
+      expect(nestedResult.isError).toBe(false);
+      return {
+        messageId: "router-message-1",
+        text: "The selected worker has started.",
+        finishReason: "stop",
+      };
+    });
+
+    try {
+      const result = await executeArchestraTool(
+        `${AGENT_TOOL_PREFIX}${slugify(router.name)}`,
+        { message: "Ask which coding worker to use." },
+        rootContext,
+      );
+
+      expect(result.isError).toBe(false);
+      expect(mockExecuteA2AMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: router.id,
+          parentDelegationChain: testAgent.id,
+          userId: rootContext.userId,
+          sessionId: rootContext.sessionId,
+          chatOpsBindingId: rootContext.chatOpsBindingId,
+          chatOpsThreadId: rootContext.chatOpsThreadId,
+        }),
+      );
+      expect(mockStartDelegatedTask).toHaveBeenCalledWith({
+        agentId: worker.id,
+        message: "Run the complete original task.",
+        context: expect.objectContaining({
+          agentId: router.id,
+          delegationChain: `${testAgent.id}:${router.id}`,
+          userId: rootContext.userId,
+          sessionId: rootContext.sessionId,
+          chatOpsBindingId: rootContext.chatOpsBindingId,
+          chatOpsThreadId: rootContext.chatOpsThreadId,
+        }),
+      });
+    } finally {
+      config.agentBackgroundExecution.enabled = previous;
+    }
   });
 
   test("propagates the current trust state to delegated subagents", async ({

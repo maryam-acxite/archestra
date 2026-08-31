@@ -13,6 +13,7 @@ import {
   EyeOff,
   Fingerprint,
   Pencil,
+  Plus,
   RefreshCw,
   Server,
   UserRoundCheck,
@@ -21,7 +22,9 @@ import {
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CreateLlmProviderApiKeyDialog } from "@/components/create-llm-provider-api-key-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   FilterSelect,
   filterControlClass,
@@ -43,6 +46,7 @@ import { SearchInput } from "@/components/search-input";
 import { TableRowActions } from "@/components/table-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -68,7 +72,6 @@ import {
 import { useLlmProviderApiKeys } from "@/lib/llm-provider-api-keys.query";
 import { formatPricePerMillion } from "@/lib/model-price-format";
 import { formatContextLength } from "@/lib/utils";
-import { MODEL_NAV_TABS } from "../model-nav-tabs";
 import { EditModelDialog } from "./_parts/edit-model-dialog";
 import {
   canFilterFreeModelsForApiKey,
@@ -91,6 +94,8 @@ export default function ModelsPage() {
   const syncModelsMutation = useSyncLlmModels();
   const updateModel = useUpdateModel();
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+  const [isCreateApiKeyDialogOpen, setIsCreateApiKeyDialogOpen] =
+    useState(false);
   const [search, setSearch] = useState("");
   const [apiKeyFilter, setApiKeyFilter] = useState<string>("all");
   const [apiKeyFilterOpen, setApiKeyFilterOpen] = useState(false);
@@ -501,7 +506,6 @@ export default function ModelsPage() {
       <PageLayout
         title="Models"
         description='Models available from your configured providers. Use "Refresh Models" to re-fetch models and capabilities from providers.'
-        tabs={MODEL_NAV_TABS}
         actionButton={refreshModelsButton}
       >
         <QueryLoadError
@@ -516,114 +520,115 @@ export default function ModelsPage() {
     <PageLayout
       title="Models"
       description='Models available from your configured providers. Use "Refresh Models" to re-fetch models and capabilities from providers.'
-      tabs={MODEL_NAV_TABS}
       actionButton={refreshModelsButton}
     >
-      <div className="space-y-4">
+      <BulkActionsScope>
         {models.length > 0 && (
-          <FilterBar className="!mb-3">
-            <SearchInput
-              objectNamePlural="models"
-              searchFields={["model ID"]}
-              value={search}
-              onSearchChange={setSearch}
-              syncQueryParams={false}
-              className={filterSearchClass}
-            />
-            <LlmProviderApiKeyDropdown
-              availableKeys={apiKeys}
-              selectedApiKeyId={apiKeyFilter === "all" ? null : apiKeyFilter}
-              open={apiKeyFilterOpen}
-              onOpenChange={setApiKeyFilterOpen}
-              onSelectKey={(value) => {
-                setApiKeyFilter(value);
-                setApiKeyFilterOpen(false);
-              }}
-              triggerVariant="select"
-              triggerClassName={filterControlClass({
-                active: apiKeyFilter !== "all",
-              })}
-              popoverClassName="w-[min(20rem,calc(100vw-2rem))]"
-              allOptionLabel="All provider API keys"
-              allOptionSelected={apiKeyFilter === "all"}
-              onSelectAllOption={() => {
-                setApiKeyFilter("all");
-                setApiKeyFilterOpen(false);
-              }}
-            />
-            <FilterSelect
-              value={modelTypeFilter}
-              onValueChange={(v) =>
-                setModelTypeFilter(v as "all" | "chat" | "embedding")
-              }
-              placeholder="Model type"
-              items={[
-                {
-                  value: "all",
-                  label: "All models",
-                  content: (
-                    <span className="flex items-center gap-2">
-                      <Boxes className="h-4 w-4 text-muted-foreground" />
-                      <span>All models</span>
-                    </span>
-                  ),
-                  selectedContent: (
-                    <span className="flex items-center gap-2">
-                      <Boxes className="h-4 w-4 text-muted-foreground" />
-                      <span>All models</span>
-                    </span>
-                  ),
-                },
-                {
-                  value: "chat",
-                  label: "Chat / generation",
-                  content: (
-                    <span className="flex items-center gap-2">
-                      <Brain className="h-4 w-4 text-muted-foreground" />
-                      <span>Chat / generation</span>
-                    </span>
-                  ),
-                  selectedContent: (
-                    <span className="flex items-center gap-2">
-                      <Brain className="h-4 w-4 text-muted-foreground" />
-                      <span>Chat / generation</span>
-                    </span>
-                  ),
-                },
-                {
-                  value: "embedding",
-                  label: "Embedding",
-                  content: (
-                    <span className="flex items-center gap-2">
-                      <Fingerprint className="h-4 w-4 text-muted-foreground" />
-                      <span>Embedding</span>
-                    </span>
-                  ),
-                  selectedContent: (
-                    <span className="flex items-center gap-2">
-                      <Fingerprint className="h-4 w-4 text-muted-foreground" />
-                      <span>Embedding</span>
-                    </span>
-                  ),
-                },
-              ]}
-            />
-            {canFilterFreeModels && (
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="models-free-only"
-                  checked={freeOnly}
-                  onCheckedChange={setFreeOnly}
-                />
-                <Label
-                  htmlFor="models-free-only"
-                  className="text-sm text-muted-foreground"
-                >
-                  Free only
-                </Label>
-              </div>
-            )}
-          </FilterBar>
+          <CollectionFilters>
+            <FilterBar leading>
+              <SearchInput
+                objectNamePlural="models"
+                searchFields={["model ID"]}
+                value={search}
+                onSearchChange={setSearch}
+                syncQueryParams={false}
+                className={filterSearchClass}
+              />
+              <LlmProviderApiKeyDropdown
+                availableKeys={apiKeys}
+                selectedApiKeyId={apiKeyFilter === "all" ? null : apiKeyFilter}
+                open={apiKeyFilterOpen}
+                onOpenChange={setApiKeyFilterOpen}
+                onSelectKey={(value) => {
+                  setApiKeyFilter(value);
+                  setApiKeyFilterOpen(false);
+                }}
+                triggerVariant="select"
+                triggerClassName={filterControlClass({
+                  active: apiKeyFilter !== "all",
+                })}
+                popoverClassName="w-[min(20rem,calc(100vw-2rem))]"
+                allOptionLabel="All provider API keys"
+                allOptionSelected={apiKeyFilter === "all"}
+                onSelectAllOption={() => {
+                  setApiKeyFilter("all");
+                  setApiKeyFilterOpen(false);
+                }}
+              />
+              <FilterSelect
+                value={modelTypeFilter}
+                onValueChange={(v) =>
+                  setModelTypeFilter(v as "all" | "chat" | "embedding")
+                }
+                placeholder="Model type"
+                items={[
+                  {
+                    value: "all",
+                    label: "All models",
+                    content: (
+                      <span className="flex items-center gap-2">
+                        <Boxes className="h-4 w-4 text-muted-foreground" />
+                        <span>All models</span>
+                      </span>
+                    ),
+                    selectedContent: (
+                      <span className="flex items-center gap-2">
+                        <Boxes className="h-4 w-4 text-muted-foreground" />
+                        <span>All models</span>
+                      </span>
+                    ),
+                  },
+                  {
+                    value: "chat",
+                    label: "Chat / generation",
+                    content: (
+                      <span className="flex items-center gap-2">
+                        <Brain className="h-4 w-4 text-muted-foreground" />
+                        <span>Chat / generation</span>
+                      </span>
+                    ),
+                    selectedContent: (
+                      <span className="flex items-center gap-2">
+                        <Brain className="h-4 w-4 text-muted-foreground" />
+                        <span>Chat / generation</span>
+                      </span>
+                    ),
+                  },
+                  {
+                    value: "embedding",
+                    label: "Embedding",
+                    content: (
+                      <span className="flex items-center gap-2">
+                        <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                        <span>Embedding</span>
+                      </span>
+                    ),
+                    selectedContent: (
+                      <span className="flex items-center gap-2">
+                        <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                        <span>Embedding</span>
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+              {canFilterFreeModels && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="models-free-only"
+                    checked={freeOnly}
+                    onCheckedChange={setFreeOnly}
+                  />
+                  <Label
+                    htmlFor="models-free-only"
+                    className="text-sm text-muted-foreground"
+                  >
+                    Free only
+                  </Label>
+                </div>
+              )}
+            </FilterBar>
+          </CollectionFilters>
         )}
         <BulkActions
           count={selectedModels.length}
@@ -679,12 +684,30 @@ export default function ModelsPage() {
           }}
           emptyIcon={Boxes}
           emptyMessage={
+            apiKeys.length === 0 ? "No models available" : "No models found"
+          }
+          emptyDescription={
             apiKeys.length === 0
-              ? "No models available. Add an API key to see available models."
-              : "No models found"
+              ? "Add an API key to see available models."
+              : undefined
+          }
+          emptyAction={
+            apiKeys.length === 0 ? (
+              <Button onClick={() => setIsCreateApiKeyDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                <span>Add API Key</span>
+              </Button>
+            ) : undefined
           }
         />
-      </div>
+      </BulkActionsScope>
+
+      <CreateLlmProviderApiKeyDialog
+        open={isCreateApiKeyDialogOpen}
+        onOpenChange={setIsCreateApiKeyDialogOpen}
+        title="Add API Key"
+        description="Add a new LLM provider API key to load its available models."
+      />
 
       {editingModel && (
         <EditModelDialog

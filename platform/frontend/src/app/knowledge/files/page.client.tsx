@@ -22,12 +22,17 @@ import {
   FilePreviewDialog,
   type PreviewableDocument,
 } from "@/components/files/file-preview-dialog";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { QueryLoadError } from "@/components/query-load-error";
 import { ResourceVisibilityBadge } from "@/components/resource-visibility-badge";
 import { SearchInput } from "@/components/search-input";
 import { TableRowActions } from "@/components/table-row-actions";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -503,52 +508,54 @@ export default function KnowledgeFilesPage() {
       }
       isPending={isLoading && files.length === 0}
     >
-      <div className="space-y-6">
-        <FilterBar
-          className="!mb-3"
-          onClearFilters={
-            search
-              ? () => {
-                  setSearch("");
+      <BulkActionsScope>
+        <CollectionFilters>
+          <FilterBar
+            leading
+            onClearFilters={
+              search
+                ? () => {
+                    setSearch("");
+                    updateQueryParams({ page: "1" });
+                  }
+                : undefined
+            }
+          >
+            {openDirectory ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2"
+                onClick={() => {
+                  setOpenDirectoryId(null);
+                  clearSelection();
                   updateQueryParams({ page: "1" });
-                }
-              : undefined
-          }
-        >
-          {openDirectory ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2"
-              onClick={() => {
-                setOpenDirectoryId(null);
-                clearSelection();
+                }}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                <span>All files</span>
+              </Button>
+            ) : null}
+            {openDirectory && (
+              <span className="font-medium text-sm">{openDirectory.name}</span>
+            )}
+
+            <SearchInput
+              isLoading={isLoading}
+              value={search}
+              onSearchChange={(value) => {
+                setSearch(value);
                 updateQueryParams({ page: "1" });
               }}
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              <span>All files</span>
-            </Button>
-          ) : null}
-          {openDirectory && (
-            <span className="font-medium text-sm">{openDirectory.name}</span>
-          )}
-
-          <SearchInput
-            isLoading={isLoading}
-            value={search}
-            onSearchChange={(value) => {
-              setSearch(value);
-              updateQueryParams({ page: "1" });
-            }}
-            // The term lives in local state and the page reset is handled just
-            // above, so the component's own query-param sync would only add a
-            // second router push per keystroke.
-            syncQueryParams={false}
-            placeholder="Search documents…"
-            className={filterSearchClass}
-          />
-        </FilterBar>
+              // The term lives in local state and the page reset is handled just
+              // above, so the component's own query-param sync would only add a
+              // second router push per keystroke.
+              syncQueryParams={false}
+              placeholder="Search documents…"
+              className={filterSearchClass}
+            />
+          </FilterBar>
+        </CollectionFilters>
 
         {/* Visibility follows the ticked rows, not the document count: picking
             an empty directory selects something the bar has to be able to
@@ -644,7 +651,7 @@ export default function KnowledgeFilesPage() {
             onPaginationChange={setPagination}
           />
         )}
-      </div>
+      </BulkActionsScope>
 
       <UploadFileDialog
         open={uploadOpen}

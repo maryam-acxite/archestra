@@ -58,6 +58,7 @@ describe("SystemPromptEditor", () => {
 
     render(<SystemPromptEditor value="" onChange={vi.fn()} height="120px" />);
 
+    expect(screen.getByRole("textbox", { name: "Instruction" })).toBeVisible();
     expect(screen.getByTestId("editor")).toHaveAttribute(
       "data-height",
       "120px",
@@ -75,6 +76,7 @@ describe("SystemPromptEditor", () => {
 
     render(
       <SystemPromptEditor
+        title="System prompt"
         value="Hello {{user.name}}"
         onChange={onChange}
         height="120px"
@@ -84,7 +86,7 @@ describe("SystemPromptEditor", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /full screen/i }));
-    const dialog = screen.getByRole("dialog", { name: "Instruction" });
+    const dialog = screen.getByRole("dialog", { name: "System prompt" });
     // The whole viewport: a second editor on the same value, the header's
     // extra action alongside the way back.
     const editors = within(dialog).getAllByTestId("editor");

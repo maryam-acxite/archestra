@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react";
 import { AclBadges } from "@/app/knowledge/connectors/_parts/acl-badges";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -19,6 +20,7 @@ import {
   TableRowActions,
 } from "@/components/table-row-actions";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { DataTable } from "@/components/ui/data-table";
 import { PermissionButton } from "@/components/ui/permission-button";
@@ -280,49 +282,51 @@ export function ConnectorDocumentsTable({
   );
 
   return (
-    <div className="space-y-4">
-      <FilterBar className="!mb-3">
-        <SearchInput
-          isLoading={isFetching}
-          value={search}
-          syncQueryParams={false}
-          placeholder="Search documents by title"
-          className={filterSearchClass}
-          onSearchChange={(nextValue) =>
-            updateQueryParams({
-              search: nextValue || null,
-              page: "1",
-            })
-          }
-        />
-        {showGroupFilter && (
-          <Select
-            value={group || "all"}
-            onValueChange={(value) =>
+    <BulkActionsScope>
+      <CollectionFilters>
+        <FilterBar>
+          <SearchInput
+            isLoading={isFetching}
+            value={search}
+            syncQueryParams={false}
+            placeholder="Search documents by title"
+            className={filterSearchClass}
+            onSearchChange={(nextValue) =>
               updateQueryParams({
-                group: value === "all" ? null : value,
+                search: nextValue || null,
                 page: "1",
               })
             }
-          >
-            <SelectTrigger
-              size="sm"
-              className={filterControlClass({ active: Boolean(group) })}
-              aria-label={`Filter by ${noun.singular}`}
+          />
+          {showGroupFilter && (
+            <Select
+              value={group || "all"}
+              onValueChange={(value) =>
+                updateQueryParams({
+                  group: value === "all" ? null : value,
+                  page: "1",
+                })
+              }
             >
-              <SelectValue placeholder={`All ${noun.plural}`} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{`All ${noun.plural}`}</SelectItem>
-              {groupOptions.map(({ groupId, label }) => (
-                <SelectItem key={groupId} value={groupId}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </FilterBar>
+              <SelectTrigger
+                size="sm"
+                className={filterControlClass({ active: Boolean(group) })}
+                aria-label={`Filter by ${noun.singular}`}
+              >
+                <SelectValue placeholder={`All ${noun.plural}`} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{`All ${noun.plural}`}</SelectItem>
+                {groupOptions.map(({ groupId, label }) => (
+                  <SelectItem key={groupId} value={groupId}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FilterBar>
+      </CollectionFilters>
 
       <BulkActions
         count={selectedCount}
@@ -484,6 +488,6 @@ export function ConnectorDocumentsTable({
           pendingLabel="Deleting..."
         />
       )}
-    </div>
+    </BulkActionsScope>
   );
 }

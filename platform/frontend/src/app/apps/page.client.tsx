@@ -8,6 +8,7 @@ import { BulkVisibilityDialog } from "@/components/bulk-visibility-dialog";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -182,50 +183,49 @@ export default function AppsPage() {
       }
     >
       <TableCardView storageKey="archestra-apps-view">
-        <FilterBar className="mb-6" actions={<TableCardViewToggle />}>
-          <SearchInput
-            isLoading={isFetching}
-            paramName="search"
-            placeholder="Search apps"
-            className={filterSearchClass}
-          />
-          <Select
-            value={kind}
-            onValueChange={(value) =>
-              setParam("kind", value === "all" ? null : value)
-            }
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Filter by kind"
-              className={filterControlClass({ active: kind !== "all" })}
+        <CollectionFilters>
+          <FilterBar leading actions={<TableCardViewToggle />}>
+            <SearchInput
+              isLoading={isFetching}
+              paramName="search"
+              placeholder="Search apps"
+              className={filterSearchClass}
+            />
+            <Select
+              value={kind}
+              onValueChange={(value) =>
+                setParam("kind", value === "all" ? null : value)
+              }
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" side="bottom" align="start">
-              <SelectItem value="all">All kinds</SelectItem>
-              <SelectItem value="owned">Apps</SelectItem>
-              <SelectItem value="external">MCP Server Apps</SelectItem>
-            </SelectContent>
-          </Select>
-          <ResourceScopeFilter
-            ownerLabelPlural="apps"
-            allLabel="All apps"
-            adminPermission={{ app: ["admin"] }}
-            showTeamSelect={false}
-          />
-          <LabelSelect
-            labelKeys={labelKeys}
-            LabelKeyRowComponent={AppLabelKeyRow}
-            className={filterControlClass({ active: Boolean(parsedLabels) })}
-          />
-        </FilterBar>
-
-        {parsedLabels && (
-          <div className="mb-6">
+              <SelectTrigger
+                size="sm"
+                aria-label="Filter by kind"
+                className={filterControlClass({ active: kind !== "all" })}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" side="bottom" align="start">
+                <SelectItem value="all">All kinds</SelectItem>
+                <SelectItem value="owned">Apps</SelectItem>
+                <SelectItem value="external">MCP Server Apps</SelectItem>
+              </SelectContent>
+            </Select>
+            <ResourceScopeFilter
+              ownerLabelPlural="apps"
+              allLabel="All apps"
+              adminPermission={{ app: ["admin"] }}
+              showTeamSelect={false}
+            />
+            <LabelSelect
+              labelKeys={labelKeys}
+              LabelKeyRowComponent={AppLabelKeyRow}
+              className={filterControlClass({ active: Boolean(parsedLabels) })}
+            />
+          </FilterBar>
+          {parsedLabels && (
             <LabelFilterBadges onRemoveLabel={handleRemoveLabel} />
-          </div>
-        )}
+          )}
+        </CollectionFilters>
 
         <LoadingWrapper
           isPending={(isPending || isFetching) && filtered.length === 0}
@@ -340,6 +340,7 @@ export function AppSection({
     clearSelection,
     selected,
     selectAllMatching,
+    rangeSelection,
   } = useBulkSelection({
     rows: apps,
     getId: getAppRowKey,
@@ -353,6 +354,7 @@ export function AppSection({
     rowSelection,
     setRowSelection,
     canSelect: (app) => app.source === "owned",
+    rangeSelection,
   });
   const selectedOwnedApps = selected.filter(
     (app): app is OwnedApp => app.source === "owned",
@@ -402,6 +404,7 @@ export function AppSection({
             rowSelection={rowSelection}
             setRowSelection={setRowSelection}
             onPageRowIdsChange={onPageRowIdsChange}
+            rangeSelection={rangeSelection}
           />
         }
         cards={

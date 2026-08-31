@@ -2,6 +2,8 @@ import {
   BLOCKED_PASSTHROUGH_HEADERS,
   BUILT_IN_AGENT_IDS,
   DOMAIN_VALIDATION_REGEX,
+  HEADER_NAME_REGEX,
+  HEADER_NAME_VALIDATION_MESSAGE,
   IncomingEmailSecurityModeSchema,
   MAX_DOMAIN_LENGTH,
   MAX_PASSTHROUGH_HEADERS,
@@ -17,6 +19,7 @@ import { z } from "zod";
 import { schema } from "@/database";
 import { SuggestedPromptInputSchema } from "./agent-suggested-prompt";
 import { AgentLabelWithDetailsSchema } from "./label";
+import { AgentBackgroundExecutionSchema } from "./runner";
 import { SelectToolSchema } from "./tool";
 import {
   type ResourceVisibilityScope,
@@ -184,10 +187,7 @@ const PassthroughHeaderSchema = z
   .string()
   .min(1)
   .max(128)
-  .regex(
-    /^[a-zA-Z0-9-]+$/,
-    "Header name must contain only alphanumeric characters and hyphens",
-  )
+  .regex(HEADER_NAME_REGEX, HEADER_NAME_VALIDATION_MESSAGE)
   .transform((h) => h.toLowerCase())
   .refine((h) => !BLOCKED_PASSTHROUGH_HEADERS.has(h), {
     message: "This header name is not allowed (hop-by-hop or protocol-level)",
@@ -210,6 +210,7 @@ const selectExtendedFields = {
   missingCredentialBehavior: MissingCredentialBehaviorSchema,
   builtInAgentConfig: BuiltInAgentConfigSchema.nullable(),
   passthroughHeaders: z.array(z.string()).nullable(),
+  backgroundExecution: AgentBackgroundExecutionSchema.nullable(),
 };
 
 const insertExtendedFields = {
@@ -220,6 +221,7 @@ const insertExtendedFields = {
   missingCredentialBehavior: MissingCredentialBehaviorSchema.optional(),
   builtInAgentConfig: BuiltInAgentConfigSchema.nullable().optional(),
   passthroughHeaders: PassthroughHeadersSchema,
+  backgroundExecution: AgentBackgroundExecutionSchema.nullable().optional(),
 };
 
 /**
@@ -392,6 +394,7 @@ export const InsertAgentSchemaBase = createInsertSchema(
     updatedAt: true,
     authorId: true,
     isPersonalGateway: true,
+    backgroundExecutionSecretId: true,
     // Which skills a gateway publishes over skill:// is decided by the
     // skill-assignment routes, which carry a `skill:read` floor. Accepting the
     // flag in the generic agent body would let a caller without that
@@ -432,6 +435,7 @@ export const UpdateAgentSchemaBase = createUpdateSchema(
     updatedAt: true,
     authorId: true,
     isPersonalGateway: true,
+    backgroundExecutionSecretId: true,
     // Which skills a gateway publishes over skill:// is decided by the
     // skill-assignment routes, which carry a `skill:read` floor. Accepting the
     // flag in the generic agent body would let a caller without that

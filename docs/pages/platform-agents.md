@@ -3,7 +3,7 @@ title: Overview
 category: Agents
 order: 1
 description: Agent overview, invocation paths, knowledge sources, and prompt templating
-lastUpdated: 2026-08-27
+lastUpdated: 2026-08-28
 ---
 
 <!-- Renaming/deleting this file? Add a redirect in docs/redirects.json. -->
@@ -102,7 +102,9 @@ Agents can be triggered through:
 - [MS Teams](/docs/platform-ms-teams)
 - [Telegram](/docs/platform-telegram)
 
-Trigger setup is managed from **Agent Triggers**. Slack, MS Teams, Telegram, and Incoming Email each have their own setup flow, and Incoming Email also owns the per-agent email invocation settings.
+Provider setup is managed from **Settings → Messaging Channels**. Slack, MS Teams, Telegram, and Incoming Email each have their own setup flow.
+
+The agent page shows its messaging channels and email status. Select **Edit** → **Configuration** to change channel assignments, channel instructions, reply behavior, or incoming email. You can edit the system prompt directly on the agent page.
 
 Go to **Settings → Agents → Available messaging channels** to remove any channel your organization does not allow. A channel you remove disappears from the pickers and stops listening — a connected Slack bot stops answering, and email stops reaching agents.
 
@@ -139,6 +141,8 @@ In **Custom** mode the agent delegates only to the subagents you assign. In **Au
 Auto delegation resolves per calling user. It applies in chat and other flows that carry a signed-in user; automated runs without one — a scheduled trigger, for example — fall back to the explicitly assigned targets.
 
 When an agent delegates work to another agent, Archestra tracks the full call chain for observability. Delegated agents also inherit the current [tool guardrails](/docs/platform-ai-tool-guardrails) trust state, so downstream tool policy enforcement does not reset mid-run.
+
+For durable work, an Agent can optionally use [Background execution](/docs/platform-agent-background-execution). Direct conversations always stay in the foreground Agent loop. A delegated task uses the target Agent's isolated deployment only when that target has Background execution configured.
 
 ## Convert to Skill
 

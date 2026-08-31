@@ -1,19 +1,11 @@
 "use client";
 
-import { requiredPagePermissionsMap } from "@archestra/shared/access-control";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { LlmProxyLayoutContext } from "@/app/llm/proxy/_parts/llm-proxy-action-context";
 import { ExternalDocsLink } from "@/components/external-docs-link";
 import { PageLayout } from "@/components/page-layout";
-import { usePermissionMap } from "@/lib/auth/auth.query";
 import { getFrontendDocsUrl } from "@/lib/docs/docs";
-
-const TABS = [
-  { label: "LLM Proxy", href: "/llm/proxy" },
-  { label: "Virtual Keys", href: "/llm/proxy/virtual-keys" },
-  { label: "OAuth Clients", href: "/llm/proxy/oauth-clients" },
-];
 
 const PAGE_CONFIG: Record<string, { title: string; description: string }> = {
   "/llm/proxy": {
@@ -26,11 +18,6 @@ const PAGE_CONFIG: Record<string, { title: string; description: string }> = {
     description:
       "Two kinds of keys. Standard virtual keys authenticate your apps through your provider keys; passthrough virtual keys grant no access and only attribute bring-your-own-key requests to a user.",
   },
-  "/llm/proxy/oauth-clients": {
-    title: "OAuth Clients",
-    description:
-      "Applications registered to authenticate to the LLM Proxy with OAuth, as themselves or on behalf of signed-in users.",
-  },
 };
 
 export default function LlmProxyLayout({
@@ -40,16 +27,7 @@ export default function LlmProxyLayout({
 }) {
   const pathname = usePathname();
   const [actionButton, setActionButton] = useState<React.ReactNode>(null);
-  const permissionMap = usePermissionMap(requiredPagePermissionsMap);
   const docsUrl = getFrontendDocsUrl("platform-llm-proxy");
-
-  // Wait for the permission answer rather than flashing tabs that would only
-  // render a forbidden page.
-  const tabs = TABS.filter(({ href }) => {
-    const required = requiredPagePermissionsMap[href];
-    const isGated = required && Object.keys(required).length > 0;
-    return isGated ? permissionMap?.[href] === true : true;
-  });
 
   const config = PAGE_CONFIG[pathname] ?? PAGE_CONFIG["/llm/proxy"];
 
@@ -76,7 +54,6 @@ export default function LlmProxyLayout({
             config.description
           )
         }
-        tabs={tabs}
         actionButton={actionButton}
       >
         {children}

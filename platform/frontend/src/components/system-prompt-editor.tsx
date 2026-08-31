@@ -26,6 +26,7 @@ import {
 import { useUnparseableExpressions } from "@/lib/utils/handlebars-validation";
 
 export function SystemPromptEditor({
+  title = "Instruction",
   value,
   onChange,
   readOnly,
@@ -34,12 +35,13 @@ export function SystemPromptEditor({
   headerExtra,
   builtInAgentId,
 }: {
+  title?: string;
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
   height?: string;
-  /** "section" uses bold h3 (matching section headings), "default" uses lighter text */
-  variant?: "default" | "section";
+  /** Heading treatment for standalone fields, form sections, and detail cards. */
+  variant?: "default" | "section" | "detail-card";
   /** Extra element rendered in the header next to the full-screen button */
   headerExtra?: React.ReactNode;
   /** Optional built-in agent id to expose built-in-agent-specific template variables */
@@ -56,7 +58,7 @@ export function SystemPromptEditor({
   });
   const description = (
     <>
-      System prompt used by the agent. Supports{" "}
+      <span>Defines the agent&apos;s behavior. Supports </span>
       <a
         href="https://handlebarsjs.com/"
         target="_blank"
@@ -64,11 +66,11 @@ export function SystemPromptEditor({
         className="underline hover:text-foreground"
       >
         Handlebars
-      </a>{" "}
-      templating
-      {docsUrl ? (
+      </a>
+      <span> templating.</span>
+      {docsUrl && (
         <>
-          <span>{" — see "}</span>
+          <span> See </span>
           <ExternalDocsLink
             href={docsUrl}
             className="underline hover:text-foreground"
@@ -76,10 +78,8 @@ export function SystemPromptEditor({
           >
             docs
           </ExternalDocsLink>
-          <span>{" for available variables."}</span>
+          <span> for available variables.</span>
         </>
-      ) : (
-        <span>.</span>
       )}
     </>
   );
@@ -88,12 +88,28 @@ export function SystemPromptEditor({
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-3">
         <div>
-          {variant === "section" ? (
-            <h3 className="text-base font-semibold">Instruction</h3>
+          {variant !== "default" ? (
+            <h3
+              className={
+                variant === "detail-card"
+                  ? "text-sm font-semibold"
+                  : "text-base font-semibold"
+              }
+            >
+              {title}
+            </h3>
           ) : (
-            <p className="text-sm font-medium">Instruction</p>
+            <p className="text-sm font-medium">{title}</p>
           )}
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <p
+            className={
+              variant === "detail-card"
+                ? "text-sm text-muted-foreground"
+                : "text-xs text-muted-foreground"
+            }
+          >
+            {description}
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {headerExtra}
@@ -117,11 +133,12 @@ export function SystemPromptEditor({
           beforeMount={(monaco) => {
             registerSystemPromptCompletions(monaco, templateExpressions);
           }}
-          options={{ ...SHARED_EDITOR_OPTIONS, readOnly }}
+          options={{ ...SHARED_EDITOR_OPTIONS, readOnly, ariaLabel: title }}
         />
       </div>
       <UnparseableExpressionsWarning expressions={unparseableExpressions} />
       <SystemPromptFullScreenDialog
+        title={title}
         open={isFullScreen}
         onOpenChange={setIsFullScreen}
         value={value}
@@ -184,6 +201,7 @@ const UNPARSEABLE_SHOWN_MAX = 5;
  * suggestion list, the find box), which keeps it.
  */
 function SystemPromptFullScreenDialog({
+  title,
   open,
   onOpenChange,
   value,
@@ -194,6 +212,7 @@ function SystemPromptFullScreenDialog({
   templateExpressions,
   unparseableExpressions,
 }: {
+  title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   value: string;
@@ -220,7 +239,7 @@ function SystemPromptFullScreenDialog({
       >
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
           <div className="space-y-1">
-            <DialogTitle className="text-base">Instruction</DialogTitle>
+            <DialogTitle className="text-base">{title}</DialogTitle>
             <DialogDescription className="text-xs">
               {description}
             </DialogDescription>
@@ -248,6 +267,7 @@ function SystemPromptFullScreenDialog({
             options={{
               ...SHARED_EDITOR_OPTIONS,
               readOnly,
+              ariaLabel: title,
               // Room to read it like a document: a minimap to move around a
               // long prompt, folding for its sections, a slightly larger face.
               minimap: { enabled: true },

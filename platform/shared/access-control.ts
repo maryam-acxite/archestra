@@ -674,6 +674,33 @@ export const requiredEndpointPermissionsMap: Partial<
    * authenticated but no specific permission.
    */
   [RouteId.GetOrganization]: {},
+
+  // Background execution belongs to Agents. Read access is enough to view
+  // runs and manage one's own declared credentials; shared credential writes
+  // additionally enforce Agent update + scope ownership inside the route.
+  [RouteId.GetAgentBackgroundExecutionPreflight]: { agent: ["read"] },
+  [RouteId.SetAgentBackgroundExecutionCredential]: { agent: ["read"] },
+  [RouteId.DeleteAgentBackgroundExecutionCredential]: { agent: ["read"] },
+  [RouteId.ListExecutionCredentials]: { agent: ["read"] },
+  [RouteId.CreateExecutionCredential]: { agentSettings: ["update"] },
+  [RouteId.GetExecutionCredentialUsage]: { agentSettings: ["update"] },
+  [RouteId.UpdateExecutionCredential]: { agentSettings: ["update"] },
+  [RouteId.DeleteExecutionCredential]: { agentSettings: ["update"] },
+  [RouteId.SetPersonalExecutionCredentialConnection]: { agent: ["read"] },
+  [RouteId.DeletePersonalExecutionCredentialConnection]: { agent: ["read"] },
+  [RouteId.SetOrganizationExecutionCredentialConnection]: {
+    agentSettings: ["update"],
+  },
+  [RouteId.DeleteOrganizationExecutionCredentialConnection]: {
+    agentSettings: ["update"],
+  },
+  [RouteId.GetAgentExecutions]: { agent: ["read"] },
+  [RouteId.StartAgentExecution]: { agent: ["read"] },
+  [RouteId.GetMyAgentExecutions]: { agent: ["read"] },
+  [RouteId.GetMyAgentExecution]: { agent: ["read"] },
+  [RouteId.UpdateAgentExecution]: { agent: ["read"] },
+  [RouteId.CancelAgentExecution]: { agent: ["read"] },
+  [RouteId.DeleteAgentExecution]: { agent: ["read"] },
   // Completing onboarding flips an org-wide flag, so gate it on admin-level
   // organization-settings update, like the other org-settings routes.
   [RouteId.CompleteOnboarding]: { organizationSettings: ["update"] },
@@ -1220,9 +1247,9 @@ export const requiredEndpointPermissionsMap: Partial<
   // OpenAI (ChatGPT subscription) key.
   [RouteId.OpenaiCodexDeviceAuthStart]: {},
   [RouteId.OpenaiCodexDeviceAuthPoll]: {},
-  // Same self-service rationale for the X Premium (SuperGrok) device flow: it
+  // Same self-service rationale for the SuperGrok device flow: it
   // only obtains the caller's own OAuth credential for a new personal xAI
-  // (X Premium subscription) key.
+  // (SuperGrok subscription) key.
   [RouteId.XaiSubscriptionDeviceAuthStart]: {},
   [RouteId.XaiSubscriptionDeviceAuthPoll]: {},
   [RouteId.GetLlmProviderApiKey]: {
@@ -1654,6 +1681,10 @@ export const requiredEndpointPermissionsMap: Partial<
     agentTrigger: ["update"],
   },
   [RouteId.BulkUpdateChatOpsBindings]: {
+    agentTrigger: ["update"],
+  },
+  [RouteId.ApplyChatOpsBindingPlan]: {
+    agent: ["read"],
     agentTrigger: ["update"],
   },
   [RouteId.CreateChatOpsDmBinding]: {
@@ -2098,7 +2129,6 @@ export const requiredPagePermissionsMap: Record<string, Permissions> = {
   // LLM
   "/llm/proxy": { llmProxy: ["read"] },
   "/llm/proxy/virtual-keys": { llmVirtualKey: ["read"] },
-  "/llm/proxy/oauth-clients": { llmOauthClient: ["read"] },
   "/llm/model-providers": { llmProviderApiKey: ["read"] },
   "/llm/models": { llmModel: ["read"] },
   // Intentionally ungated: this page is fixed to the caller's own usage.
@@ -2126,10 +2156,24 @@ export const requiredPagePermissionsMap: Record<string, Permissions> = {
 
   // Settings
   "/settings/service-accounts": { serviceAccount: ["read"] },
+  // Every OAuth client in one place — LLM proxy, MCP gateways and agents
+  // alike — so the reader is not asked which product a credential belongs to
+  // before they can find it.
+  //
+  // Gated on the LLM half alone: this map AND-s the resources it lists and
+  // the guard has no "any of", so naming both would hide the page from a
+  // custom role holding only one. The MCP half is gated inside the page
+  // instead. Every predefined role grants the two together.
+  "/settings/oauth-clients": { llmOauthClient: ["read"] },
   "/settings/llm": { llmSettings: ["read"] },
   "/settings/mcp": { mcpSettings: ["read"] },
   "/settings/skills": { skillsSettings: ["read"] },
   "/settings/agents": { agentSettings: ["read"] },
+  "/settings/messaging-channels": { agentTrigger: ["read"] },
+  "/settings/messaging-channels/slack": { agentTrigger: ["read"] },
+  "/settings/messaging-channels/ms-teams": { agentTrigger: ["read"] },
+  "/settings/messaging-channels/telegram": { agentTrigger: ["read"] },
+  "/settings/messaging-channels/email": { agentTrigger: ["read"] },
   "/settings/apps": { agentSettings: ["read"] },
   "/settings/security": { agentSettings: ["read"] },
   "/settings/environments": { environment: ["update"] },

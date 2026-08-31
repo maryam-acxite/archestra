@@ -20,6 +20,7 @@ import { ErrorBoundary } from "@/app/_parts/error-boundary";
 import { AuthProviderIcon } from "@/components/auth-provider-icon";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
 import {
+  CollectionFilters,
   FilterBar,
   filterControlClass,
   filterSearchClass,
@@ -34,6 +35,7 @@ import { TableRowActions } from "@/components/table-row-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -606,20 +608,23 @@ function MembersTab({
   ];
 
   return (
-    <>
-      <FilterBar
-        className={isPending ? "mb-4" : "mb-3"}
-        actions={<TabButtons activeTab={activeTab} onTabChange={onTabChange} />}
-      >
-        <SearchInput
-          isLoading={isFetching}
-          objectNamePlural="users"
-          searchFields={["name", "email"]}
-          paramName="name"
-          className={filterSearchClass}
-        />
-        <RoleFilterDropdown />
-      </FilterBar>
+    <BulkActionsScope>
+      <CollectionFilters>
+        <FilterBar
+          actions={
+            <TabButtons activeTab={activeTab} onTabChange={onTabChange} />
+          }
+        >
+          <SearchInput
+            isLoading={isFetching}
+            objectNamePlural="users"
+            searchFields={["name", "email"]}
+            paramName="name"
+            className={filterSearchClass}
+          />
+          <RoleFilterDropdown />
+        </FilterBar>
+      </CollectionFilters>
 
       <LoadingWrapper isPending={isPending} loadingFallback={<LoadingState />}>
         <BulkActions
@@ -673,11 +678,12 @@ function MembersTab({
             params.delete("name");
             params.delete("role");
             params.set("page", "1");
-            router.push(`${pathname}?${params.toString()}`, { scroll: false });
+            router.push(`${pathname}?${params.toString()}`, {
+              scroll: false,
+            });
           }}
         />
       </LoadingWrapper>
-
       {/* Change Role Dialog */}
       {changingRole && (
         <ChangeRoleDialog
@@ -753,7 +759,7 @@ function MembersTab({
           pendingLabel="Removing..."
         />
       )}
-    </>
+    </BulkActionsScope>
   );
 }
 
@@ -998,12 +1004,14 @@ function InvitationsTab({
   ];
 
   return (
-    <>
-      <div className="flex items-center gap-4 mb-4">
-        <div className="ml-auto">
-          <TabButtons activeTab={activeTab} onTabChange={onTabChange} />
-        </div>
-      </div>
+    <div>
+      <CollectionFilters>
+        <FilterBar
+          actions={
+            <TabButtons activeTab={activeTab} onTabChange={onTabChange} />
+          }
+        />
+      </CollectionFilters>
 
       <LoadingWrapper isPending={isPending} loadingFallback={<LoadingState />}>
         <DataTable
@@ -1037,7 +1045,7 @@ function InvitationsTab({
           pendingLabel="Cancelling..."
         />
       )}
-    </>
+    </div>
   );
 }
 

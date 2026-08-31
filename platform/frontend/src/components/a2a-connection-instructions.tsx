@@ -5,7 +5,7 @@ import {
   DocsPage,
   getDocsUrl,
 } from "@archestra/shared";
-import { ChevronDown, Mail, MessageCircle, MessagesSquare } from "lucide-react";
+import { ChevronDown, KeyRound, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -14,15 +14,15 @@ import {
   resolveCandidateBaseUrls,
 } from "@/app/connection/connection-flow.utils";
 import { ConnectionUrlStep } from "@/app/connection/connection-url-step";
+import { AgentChatApps } from "@/components/agent-chat-apps";
 import {
   CodeBlock,
   CodeBlockCopyButton,
 } from "@/components/ai-elements/code-block";
-import { CodeText } from "@/components/code-text";
-import { CopyableCode } from "@/components/copyable-code";
 import { CurlExampleSection } from "@/components/curl-example-section";
 import { McpOauthManagement } from "@/components/mcp-oauth-management";
 import { getManageTokenLink } from "@/components/tokens/manage-token-link";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -38,9 +38,7 @@ import {
 } from "@/components/ui/select";
 import { WizardStep } from "@/components/wizard-step";
 import { useHasPermissions } from "@/lib/auth/auth.query";
-import { useAgentEmailAddress } from "@/lib/chatops/incoming-email.query";
 import config from "@/lib/config/config";
-import { useFeature } from "@/lib/config/config.query";
 import { useOrganization } from "@/lib/organization.query";
 import {
   useFetchTeamTokenValue,
@@ -48,10 +46,6 @@ import {
 } from "@/lib/teams/team-token.query";
 import { useFetchUserTokenValue, useUserToken } from "@/lib/user-token.query";
 import { generateUuid } from "@/lib/uuid";
-import {
-  AgentEmailDisabledMessage,
-  EmailNotConfiguredMessage,
-} from "./email-not-configured-message";
 
 type InternalAgent = archestraApiTypes.GetAllAgentsResponses["200"][number];
 
@@ -78,7 +72,6 @@ export function A2AConnectionInstructions({
   const { data: canReadAgentTriggers } = useHasPermissions({
     agentTrigger: ["read"],
   });
-  const incomingEmail = useFeature("incomingEmail");
 
   const tokens = tokensData?.tokens;
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
@@ -92,6 +85,7 @@ export function A2AConnectionInstructions({
   const [backgroundExampleMessageId] = useState(() => generateUuid());
   const endpointHeadingId = useId();
   const examplesHeadingId = useId();
+  const exampleTokenSelectId = useId();
 
   // Mirror the /connection page's base-URL fallback chain so the A2A panel
   // honors the same admin curation (descriptions, default flag, hidden URLs).
@@ -121,17 +115,6 @@ export function A2AConnectionInstructions({
   // Mutations for fetching token values
   const fetchUserTokenMutation = useFetchUserTokenValue();
   const fetchTeamTokenMutation = useFetchTeamTokenValue();
-
-  // Email invocation - check both global feature AND agent-level setting
-  const globalEmailEnabled = incomingEmail?.enabled ?? false;
-  const agentEmailEnabled = agent.incomingEmailEnabled ?? false;
-  const emailEnabled = globalEmailEnabled && agentEmailEnabled;
-
-  // Fetch the email address from the backend (uses correct mailbox local part)
-  const { data: emailAddressData } = useAgentEmailAddress(
-    emailEnabled ? agent.id : null,
-  );
-  const agentEmailAddress = emailAddressData?.emailAddress ?? null;
 
   // The A2A protocol surface (SendMessage / SendStreamingMessage / the
   // agent-card.json card) lives under /v2.
@@ -419,93 +402,8 @@ curl -X POST "${a2aEndpoint}" \\
   // so the standalone A2A page doesn't repeat them here.
   const secondaryChannels = (
     <div className="space-y-6">
-      {/* Chat apps (ChatOps channels) */}
-      {canReadAgentTriggers && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <MessagesSquare className="h-4 w-4 text-muted-foreground" />
-            <Label className="text-sm font-medium">Chat Apps</Label>
-          </div>
-          <p className={CHANNEL_PROSE_CLASS}>
-            Talk to this agent from chat apps like Slack — set it up under{" "}
-            <Link
-              href="/messaging-channels"
-              className="underline hover:text-foreground"
-            >
-              Messaging Channels
-            </Link>
-            .
-          </p>
-        </div>
-      )}
-
-      {/*
-        Email Invocation - always show, with configuration guidance when not
-        enabled. Laid out like the channels above it: icon + label, then one
-        muted `text-xs` line of prose, then whatever that channel hands the
-        reader to copy. Its guidance used to sit in a `bg-muted/50` panel at
-        `text-sm`, which made the channel that most often has nothing to copy
-        the loudest of the three.
-      */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Mail className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Email Invocation</Label>
-        </div>
-
-        {!globalEmailEnabled ? (
-          <EmailNotConfiguredMessage className={CHANNEL_PROSE_CLASS} />
-        ) : agentEmailEnabled ? (
-          <>
-            <p className={CHANNEL_PROSE_CLASS}>
-              Send an email to invoke this agent. The email body will be used as
-              the first message.
-            </p>
-            {/* Security mode description */}
-            {agent.incomingEmailSecurityMode === "private" && (
-              <p className={CHANNEL_PROSE_CLASS}>
-                <strong className="font-medium">Private mode:</strong> Only
-                emails from registered users with access to this agent will be
-                processed.
-              </p>
-            )}
-            {agent.incomingEmailSecurityMode === "internal" && (
-              <p className={CHANNEL_PROSE_CLASS}>
-                <strong className="font-medium">Internal mode:</strong> Only
-                emails from{" "}
-                <span className="font-mono">
-                  @{agent.incomingEmailAllowedDomain || "your-domain.com"}
-                </span>{" "}
-                will be processed.
-              </p>
-            )}
-            {agent.incomingEmailSecurityMode === "public" && (
-              <p className={CHANNEL_PROSE_CLASS}>
-                <strong className="font-medium">Public mode:</strong> Any email
-                will be processed. Use with caution.
-              </p>
-            )}
-
-            {/* Email address */}
-            {agentEmailAddress && (
-              <CopyableCode
-                value={agentEmailAddress}
-                toastMessage="Email address copied"
-                variant="primary"
-              >
-                <div className="flex items-center gap-2">
-                  <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <CodeText className="text-xs text-primary break-all">
-                    {agentEmailAddress}
-                  </CodeText>
-                </div>
-              </CopyableCode>
-            )}
-          </>
-        ) : (
-          <AgentEmailDisabledMessage className={CHANNEL_PROSE_CLASS} />
-        )}
-      </div>
+      {/* Chat app assignments live with the agent; provider credentials live in Settings. */}
+      {canReadAgentTriggers && <AgentChatApps agent={agent} />}
     </div>
   );
 
@@ -522,241 +420,297 @@ curl -X POST "${a2aEndpoint}" \\
     return (
       <div className="space-y-4">
         <section
-          aria-labelledby={endpointHeadingId}
-          className="space-y-4 rounded-lg border bg-card p-4"
+          aria-labelledby={examplesHeadingId}
+          className="rounded-lg border bg-card"
         >
-          <h3 id={endpointHeadingId} className="text-sm font-semibold">
-            Endpoint
-          </h3>
-          <ConnectionUrlStep
-            bare
-            candidateUrls={candidateBaseUrls}
-            metadata={connectionBaseUrls}
-            value={connectionUrl}
-            onChange={setUserBaseUrl}
-          />
-          <CodeBlock
-            code={a2aEndpoint}
-            language="text"
-            wrapLongLines
-            contentClassName="overflow-x-hidden"
-            contentStyle={{
-              fontSize: "0.75rem",
-              paddingRight: "3.5rem",
-            }}
-          >
-            <div className="overflow-hidden rounded-md border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <CodeBlockCopyButton
-                title="Copy A2A endpoint URL"
-                className="rounded-none"
-                onCopy={() => toast.success("A2A endpoint URL copied")}
-                onError={() => toast.error("Failed to copy A2A endpoint URL")}
-              />
-            </div>
-          </CodeBlock>
-        </section>
-
-        <section
-          aria-labelledby="a2a-authentication-heading"
-          className="space-y-4 rounded-lg border bg-card p-4"
-        >
-          <div className="space-y-1">
-            <h3
-              id="a2a-authentication-heading"
-              className="text-sm font-semibold"
-            >
-              Authentication
+          <div className="space-y-1 p-4">
+            <h3 id={examplesHeadingId} className="text-sm font-semibold">
+              Call via API
             </h3>
             <p className="text-sm text-muted-foreground">
-              Use a platform token for A2A. OAuth access tokens and configured
-              identity-provider JWTs also work; LLM API keys do not.
+              Connect a custom integration through the Agent-to-Agent (A2A) API.
             </p>
           </div>
-          <div className="space-y-3">
-            <Select value={effectiveTokenId} onValueChange={setSelectedTokenId}>
-              <SelectTrigger className="min-h-[60px] w-full py-2.5">
-                <SelectValue placeholder="Select token">
-                  {effectiveTokenId && (
-                    <div className="flex flex-col items-start gap-0.5 text-left">
-                      <div>{getTokenDisplayName()}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {isPersonalTokenSelected
-                          ? "For your own integrations"
-                          : selectedTeamToken?.isOrganizationToken
-                            ? "Shared across the organization"
-                            : "Shared with this team"}
-                      </div>
-                    </div>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {userToken && (
-                  <SelectItem value={PERSONAL_TOKEN_ID}>
-                    <div className="flex flex-col items-start gap-0.5">
-                      <div>Personal Token</div>
-                      <div className="text-xs text-muted-foreground">
-                        For your own integrations
-                      </div>
-                    </div>
-                  </SelectItem>
-                )}
-                {tokens
-                  ?.filter((token) => !token.isOrganizationToken)
-                  .map((token) => {
-                    const unusable = token.worksWithProfile === false;
-                    return (
-                      <SelectItem
-                        key={token.id}
-                        value={token.id}
-                        disabled={unusable}
-                      >
-                        <div className="flex flex-col items-start gap-0.5">
-                          <div>
-                            {token.team?.name
-                              ? `Team Token (${token.team.name})`
-                              : token.name}
-                          </div>
+
+          <section
+            aria-labelledby={endpointHeadingId}
+            className="space-y-4 border-t p-4"
+          >
+            <h4 id={endpointHeadingId} className="text-sm font-semibold">
+              Agent Endpoint
+            </h4>
+            <ConnectionUrlStep
+              bare
+              candidateUrls={candidateBaseUrls}
+              metadata={connectionBaseUrls}
+              value={connectionUrl}
+              onChange={setUserBaseUrl}
+            />
+            <CodeBlock
+              code={a2aEndpoint}
+              language="text"
+              wrapLongLines
+              contentClassName="overflow-x-hidden"
+              contentStyle={{
+                fontSize: "0.75rem",
+                paddingRight: "3.5rem",
+              }}
+            >
+              <div className="overflow-hidden rounded-md border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <CodeBlockCopyButton
+                  title="Copy A2A endpoint URL"
+                  className="rounded-none"
+                  onCopy={() => toast.success("A2A endpoint URL copied")}
+                  onError={() => toast.error("Failed to copy A2A endpoint URL")}
+                />
+              </div>
+            </CodeBlock>
+          </section>
+
+          <section
+            aria-labelledby="a2a-authentication-heading"
+            className="space-y-4 border-t p-4"
+          >
+            <div className="space-y-1">
+              <h4
+                id="a2a-authentication-heading"
+                className="text-sm font-semibold"
+              >
+                Authentication
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                A2A accepts platform tokens, OAuth access tokens, and configured
+                identity-provider JWTs. LLM API keys are not accepted.{" "}
+                <a
+                  href={`${getDocsUrl(DocsPage.PlatformAgentTriggersWebhookA2a)}#authentication`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="whitespace-nowrap underline hover:text-foreground"
+                >
+                  Learn more
+                </a>
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h5 className="text-xs font-medium">Platform tokens</h5>
+                <p className="text-xs text-muted-foreground">
+                  Use a personal token for your own integration, or a team or
+                  organization token for shared access.
+                </p>
+              </div>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="shrink-0 self-start"
+              >
+                <Link href={manageTokenLink.href}>
+                  <KeyRound className="size-4" />
+                  {manageTokenLink.label}
+                </Link>
+              </Button>
+            </div>
+            <div className="border-t pt-4">
+              <McpOauthManagement
+                resourceId={agent.id}
+                resourceKind="agent"
+                heading={{
+                  title: "OAuth clients",
+                  description:
+                    "Register applications that call this agent as themselves or on behalf of signed-in users.",
+                }}
+              />
+            </div>
+          </section>
+
+          <Collapsible className="border-t">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-4 px-4 pb-1 pt-4 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              <span className="text-sm font-semibold">Request examples</span>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
+              Copy A2A requests for common integration workflows. The{" "}
+              <a
+                href={getDocsUrl(DocsPage.PlatformAgentTriggersWebhookA2a)}
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-foreground"
+              >
+                A2A docs
+              </a>{" "}
+              cover every method.
+            </p>
+            <CollapsibleContent className="space-y-4 border-t px-4 pb-4 pt-4">
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label htmlFor={exampleTokenSelectId}>
+                    Token for examples
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Select the platform token used when revealing or copying a
+                    request.
+                  </p>
+                </div>
+                <Select
+                  value={effectiveTokenId}
+                  onValueChange={setSelectedTokenId}
+                >
+                  <SelectTrigger
+                    id={exampleTokenSelectId}
+                    className="min-h-[60px] w-full py-2.5"
+                  >
+                    <SelectValue placeholder="Select token">
+                      {effectiveTokenId && (
+                        <div className="flex flex-col items-start gap-0.5 text-left">
+                          <div>{getTokenDisplayName()}</div>
                           <div className="text-xs text-muted-foreground">
-                            {unusable
-                              ? unusableTokenReason
-                              : "Shared with this team"}
+                            {isPersonalTokenSelected
+                              ? "For your own integrations"
+                              : selectedTeamToken?.isOrganizationToken
+                                ? "Shared across the organization"
+                                : "Shared with this team"}
+                          </div>
+                        </div>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userToken && (
+                      <SelectItem value={PERSONAL_TOKEN_ID}>
+                        <div className="flex flex-col items-start gap-0.5">
+                          <div>Personal Token</div>
+                          <div className="text-xs text-muted-foreground">
+                            For your own integrations
                           </div>
                         </div>
                       </SelectItem>
-                    );
-                  })}
-                {tokens
-                  ?.filter((token) => token.isOrganizationToken)
-                  .map((token) => (
-                    <SelectItem key={token.id} value={token.id}>
-                      <div className="flex flex-col items-start gap-0.5">
-                        <div>Organization Token</div>
-                        <div className="text-xs text-muted-foreground">
-                          Shared across the organization
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              <Link
-                href={manageTokenLink.href}
-                className="underline hover:text-foreground"
-              >
-                {manageTokenLink.label}
-              </Link>
-            </p>
-            {agent.identityProviderId && (
-              <p className="text-xs text-muted-foreground">
-                External identity-provider JWTs are also accepted.
-              </p>
-            )}
-          </div>
-        </section>
+                    )}
+                    {tokens
+                      ?.filter((token) => !token.isOrganizationToken)
+                      .map((token) => {
+                        const unusable = token.worksWithProfile === false;
+                        return (
+                          <SelectItem
+                            key={token.id}
+                            value={token.id}
+                            disabled={unusable}
+                          >
+                            <div className="flex flex-col items-start gap-0.5">
+                              <div>
+                                {token.team?.name
+                                  ? `Team Token (${token.team.name})`
+                                  : token.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {unusable
+                                  ? unusableTokenReason
+                                  : "Shared with this team"}
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    {tokens
+                      ?.filter((token) => token.isOrganizationToken)
+                      .map((token) => (
+                        <SelectItem key={token.id} value={token.id}>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <div>Organization Token</div>
+                            <div className="text-xs text-muted-foreground">
+                              Shared across the organization
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-        <section
-          aria-labelledby={examplesHeadingId}
-          className="space-y-4 rounded-lg border bg-card p-4"
-        >
-          <h3 id={examplesHeadingId} className="text-sm font-semibold">
-            Call the agent
-          </h3>
-          <div className="space-y-3">
-            <CurlExampleSection
-              key={`card-${effectiveTokenId}`}
-              code={agentCardCurlCode}
-              {...curlExampleProps}
-            />
-            <CurlExampleSection
-              key={`send-${effectiveTokenId}`}
-              code={curlCode}
-              {...curlExampleProps}
-            />
-            <CurlExampleSection
-              key={`stream-${effectiveTokenId}`}
-              code={streamingCurlCode}
-              {...curlExampleProps}
-            />
-            <Collapsible className="rounded-lg border">
-              <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
-                Continue the conversation
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
+              <div className="space-y-3 border-t pt-4">
                 <CurlExampleSection
-                  key={`reply-${effectiveTokenId}`}
-                  code={replyCurlCode}
+                  key={`card-${effectiveTokenId}`}
+                  code={agentCardCurlCode}
                   {...curlExampleProps}
                 />
-              </CollapsibleContent>
-            </Collapsible>
-            <Collapsible className="rounded-lg border">
-              <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
-                Approve or deny tool calls
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
                 <CurlExampleSection
-                  key={`approval-${effectiveTokenId}`}
-                  code={approvalCurlCode}
+                  key={`send-${effectiveTokenId}`}
+                  code={curlCode}
                   {...curlExampleProps}
                 />
-              </CollapsibleContent>
-            </Collapsible>
-            <Collapsible className="rounded-lg border">
-              <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
-                Run in the background
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
                 <CurlExampleSection
-                  key={`background-${effectiveTokenId}`}
-                  code={backgroundTaskCurlCode}
+                  key={`stream-${effectiveTokenId}`}
+                  code={streamingCurlCode}
                   {...curlExampleProps}
                 />
-              </CollapsibleContent>
-            </Collapsible>
-            <Collapsible className="rounded-lg border">
-              <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
-                Reconnect to a running task
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
-                <CurlExampleSection
-                  key={`subscribe-${effectiveTokenId}`}
-                  code={subscribeCurlCode}
-                  {...curlExampleProps}
-                />
-              </CollapsibleContent>
-            </Collapsible>
-            <Collapsible className="rounded-lg border">
-              <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
-                List and cancel tasks
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
-                <CurlExampleSection
-                  key={`manage-${effectiveTokenId}`}
-                  code={manageTasksCurlCode}
-                  {...curlExampleProps}
-                />
-              </CollapsibleContent>
-            </Collapsible>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Every method is covered in the{" "}
-            <a
-              href={getDocsUrl(DocsPage.PlatformAgentTriggersWebhookA2a)}
-              target="_blank"
-              rel="noreferrer"
-              className="underline hover:text-foreground"
-            >
-              A2A docs
-            </a>
-            .
-          </p>
+                <Collapsible className="rounded-lg border">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
+                    Continue the conversation
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-4 pb-4">
+                    <CurlExampleSection
+                      key={`reply-${effectiveTokenId}`}
+                      code={replyCurlCode}
+                      {...curlExampleProps}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+                <Collapsible className="rounded-lg border">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
+                    Approve or deny tool calls
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-4 pb-4">
+                    <CurlExampleSection
+                      key={`approval-${effectiveTokenId}`}
+                      code={approvalCurlCode}
+                      {...curlExampleProps}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+                <Collapsible className="rounded-lg border">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
+                    Run in the background
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-4 pb-4">
+                    <CurlExampleSection
+                      key={`background-${effectiveTokenId}`}
+                      code={backgroundTaskCurlCode}
+                      {...curlExampleProps}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+                <Collapsible className="rounded-lg border">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
+                    Reconnect to a running task
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-4 pb-4">
+                    <CurlExampleSection
+                      key={`subscribe-${effectiveTokenId}`}
+                      code={subscribeCurlCode}
+                      {...curlExampleProps}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+                <Collapsible className="rounded-lg border">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium">
+                    List and cancel tasks
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-4 pb-4">
+                    <CurlExampleSection
+                      key={`manage-${effectiveTokenId}`}
+                      code={manageTasksCurlCode}
+                      {...curlExampleProps}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </section>
 
         <section className="space-y-4 rounded-lg border bg-card p-4">
@@ -765,16 +719,6 @@ curl -X POST "${a2aEndpoint}" \\
           </h3>
           {chatDeepLinkBlock}
           <div className="border-t pt-4">{secondaryChannels}</div>
-          <div className="space-y-3 border-t pt-4">
-            <div className="space-y-1">
-              <h4 className="text-sm font-medium">OAuth clients</h4>
-              <p className="text-xs text-muted-foreground">
-                Register applications that call this agent as themselves or on
-                behalf of signed-in users.
-              </p>
-            </div>
-            <McpOauthManagement resourceId={agent.id} resourceKind="agent" />
-          </div>
         </section>
       </div>
     );
@@ -782,7 +726,7 @@ curl -X POST "${a2aEndpoint}" \\
 
   return (
     <div>
-      <WizardStep n={1} title="Endpoint">
+      <WizardStep n={1} title="Agent Endpoint">
         <div className="space-y-3">
           <ConnectionUrlStep
             bare

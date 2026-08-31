@@ -16,7 +16,7 @@ Plugins run on developer machines. Review every file before you approve an impor
 
 > **Beta feature** — set `ARCHESTRA_PLUGINS_ENABLED=true`, or enable the `ARCHESTRA_BETA` switch. See [Deployment](/docs/platform-deployment#skills-marketplace).
 
-Plugins live on the second tab of the **Skills & Plugins** page, under **Studio** in the sidebar. The catalog shows each plugin's client, platform support, source, visibility, and sync state.
+Plugins live under **Studio** in the sidebar. The catalog shows each plugin's client, platform support, source, visibility, and sync state.
 
 ## Creating a Plugin
 
@@ -115,4 +115,4 @@ An authorized platform administrator selects the plugin and runs the setup comma
 
 Use a plugin when the coding client must own the behavior. Use a Skill when the model needs reusable guidance.
 
-Skills embedded in a plugin also appear under **Skills from plugins** on the Skills page. This read-only Beta category ignores the plugin's client and platform when listing `SKILL.md` files. Agents in any connected client can discover and load these Skills without creating standalone copies. The source client remains visible because scripts or tool names inside the Skill may still depend on it.
+Skills embedded at any depth in a plugin also appear under **Skills from plugins** on the Skills page. This read-only Beta category ignores the plugin's client and platform when listing `SKILL.md` files. Every file owned by the Skill tree is shared except hooks, hook manifests, plugin or marketplace metadata, and installation files. Agents in any connected client can discover and load these Skills without creating standalone copies.

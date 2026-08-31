@@ -14,7 +14,11 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useSetSettingsAction } from "@/app/settings/layout";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { FormDialog } from "@/components/form-dialog";
 import { QueryLoadError } from "@/components/query-load-error";
 import { RoleTypeIcon } from "@/components/role-type-icon";
@@ -24,6 +28,7 @@ import {
   TableRowActions,
 } from "@/components/table-row-actions";
 import { BulkActions } from "@/components/ui/bulk-actions-bar";
+import { BulkActionsScope } from "@/components/ui/bulk-actions-context";
 import { createSelectColumn } from "@/components/ui/bulk-select-column";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -419,24 +424,25 @@ export function RolesList({ headerAction }: { headerAction?: ReactNode }) {
 
   return (
     <>
-      <div className="space-y-6">
-        <FilterBar
-          className={isLoadingError ? undefined : "!mb-3"}
-          onClearFilters={
-            nameFilter
-              ? () => updateQueryParams({ name: null, page: "1" })
-              : undefined
-          }
-          actions={headerAction}
-        >
-          <SearchInput
-            isLoading={isLoading}
-            objectNamePlural="roles"
-            searchFields={["name"]}
-            paramName="name"
-            className={filterSearchClass}
-          />
-        </FilterBar>
+      <BulkActionsScope>
+        <CollectionFilters>
+          <FilterBar
+            onClearFilters={
+              nameFilter
+                ? () => updateQueryParams({ name: null, page: "1" })
+                : undefined
+            }
+            actions={headerAction}
+          >
+            <SearchInput
+              isLoading={isLoading}
+              objectNamePlural="roles"
+              searchFields={["name"]}
+              paramName="name"
+              className={filterSearchClass}
+            />
+          </FilterBar>
+        </CollectionFilters>
 
         {isLoadingError ? (
           <QueryLoadError
@@ -527,7 +533,7 @@ export function RolesList({ headerAction }: { headerAction?: ReactNode }) {
             )}
           </>
         )}
-      </div>
+      </BulkActionsScope>
 
       {/* Create Role Dialog */}
       <FormDialog

@@ -204,6 +204,35 @@ describe("ChatOpsManager security validation", () => {
     });
   }
 
+  test("posts background task completion into the bound thread", async ({
+    makeOrganization,
+  }) => {
+    const organization = await makeOrganization();
+    const binding = await unboundChannelBinding(organization.id);
+    const sendReply = vi.fn().mockResolvedValue("reply-id");
+    const manager = makeManagerWith(createMockProvider({ sendReply }));
+
+    await manager.notifyBindingThread({
+      bindingId: binding.id,
+      threadId: "task-thread",
+      text: "Task finished.",
+      agentName: "Research agent",
+    });
+
+    expect(sendReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Task finished.",
+        replyInThread: true,
+        footer: "🤖 Research agent",
+        originalMessage: expect.objectContaining({
+          channelId: "test-channel-id",
+          threadId: "task-thread",
+          isThreadReply: true,
+        }),
+      }),
+    );
+  });
+
   test("auto-assigns the sole agent when a channel has no agent yet", async ({
     makeOrganization,
     makeInternalAgent,
@@ -4168,7 +4197,7 @@ describe("ChatOpsManager Slack conversation context", () => {
       provider: "slack",
       channelId: "C_CTX_NAME",
       workspaceId: "T_CTX",
-      channelName: "task-feed",
+      channelName: "support-triage",
       agentId: agent.id,
     });
 
@@ -4188,7 +4217,7 @@ describe("ChatOpsManager Slack conversation context", () => {
     });
 
     const sent = executorSpy.mock.calls[0][0].message;
-    expect(sent).toContain("#task-feed");
+    expect(sent).toContain("#support-triage");
     // The id stays — tools are handed a channel+ts pair and need it.
     expect(sent).toContain("C_CTX_NAME");
   });

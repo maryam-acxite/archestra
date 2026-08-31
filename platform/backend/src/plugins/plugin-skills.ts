@@ -211,10 +211,25 @@ function skillRootOf(manifestPath: string): string {
   return index === -1 ? "" : manifestPath.slice(0, index);
 }
 
-/**
- * File paths belonging to one skill tree: everything under its root except
- * the manifest itself and anything a deeper skill root owns.
- */
+const PLUGIN_METADATA_DIRECTORY_NAMES = new Set([
+  ".claude-plugin",
+  ".codex-plugin",
+  ".cursor-plugin",
+  ".plugin",
+]);
+
+const PLUGIN_METADATA_DIRECTORY_PATHS = [".agents/plugins", ".github/plugin"];
+
+const INSTALLATION_DIRECTORY_NAMES = new Set([
+  "bootstrap",
+  "install",
+  "installation",
+  "installer",
+  "setup",
+  "uninstall",
+]);
+
+/** Keep Skill-owned resources and explicitly adoptable plugin context. */
 function resourcePathsOf(
   filePaths: string[],
   manifestPath: string,
@@ -228,8 +243,46 @@ function resourcePathsOf(
   return filePaths.filter((path) => {
     if (path === manifestPath) return false;
     if (root !== "" && !path.startsWith(`${root}/`)) return false;
-    return !deeperRoots.some(
-      (deeper) => deeper !== "" && path.startsWith(`${deeper}/`),
-    );
+    if (
+      deeperRoots.some(
+        (deeper) => deeper !== "" && path.startsWith(`${deeper}/`),
+      )
+    ) {
+      return false;
+    }
+    const relativePath = root === "" ? path : path.slice(root.length + 1);
+    return !isPluginOnlyArtifact(relativePath);
   });
+}
+
+function isPluginOnlyArtifact(relativePath: string): boolean {
+  const lowerPath = relativePath.toLowerCase();
+  const segments = lowerPath.split("/");
+  const filename = segments.at(-1) ?? "";
+  if (segments.includes("hooks") || /^hooks?\.json$/.test(filename)) {
+    return true;
+  }
+  if (
+    segments.some((segment) => PLUGIN_METADATA_DIRECTORY_NAMES.has(segment)) ||
+    PLUGIN_METADATA_DIRECTORY_PATHS.some(
+      (path) =>
+        lowerPath === path ||
+        lowerPath.startsWith(`${path}/`) ||
+        lowerPath.includes(`/${path}/`),
+    ) ||
+    (segments.length === 1 && /^(?:plugin|marketplace)\.json$/.test(filename))
+  ) {
+    return true;
+  }
+  if (segments.some((segment) => INSTALLATION_DIRECTORY_NAMES.has(segment))) {
+    return true;
+  }
+  if (
+    /^(?:(?:pre|post)?install(?:er|ation)?|bootstrap(?:per)?|setup|uninstall)(?:[._-].+)?$/.test(
+      filename,
+    )
+  ) {
+    return !/\.(?:md|txt)$/i.test(filename);
+  }
+  return false;
 }

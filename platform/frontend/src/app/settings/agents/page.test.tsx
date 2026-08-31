@@ -20,6 +20,19 @@ let mockAgents: Array<{
   scope: "personal" | "team" | "org";
   authorEmail?: string | null;
 }> = [];
+let mockExecutionBackend: {
+  name: "kubernetes";
+  available: boolean;
+  defaultImage: string;
+  defaultTtlHours: number;
+  defaultIdleTimeoutMinutes: number;
+  allowPrivileged: boolean;
+  resources: {
+    cpuRequest: string;
+    memoryRequest: string;
+    memoryLimit: string;
+  };
+} | null = null;
 const mockAgentSelector = vi.fn(
   ({ value, placeholder }: { value: string; placeholder?: string }) => (
     <div>{value || placeholder}</div>
@@ -66,15 +79,18 @@ vi.mock("@/components/settings/settings-block", () => ({
     title,
     description,
     control,
+    children,
   }: {
     title: React.ReactNode;
     description?: React.ReactNode;
     control: React.ReactNode;
+    children?: React.ReactNode;
   }) => (
     <section>
       <h2>{title}</h2>
       {description ? <p>{description}</p> : null}
       <div>{control}</div>
+      {children}
     </section>
   ),
   SettingsSectionStack: ({ children }: { children: React.ReactNode }) => (
@@ -115,6 +131,13 @@ vi.mock("@/lib/agent.query", () => ({
   useOrgScopedAgents: () => ({
     data: mockAgents,
   }),
+}));
+
+vi.mock("@/lib/config/config.query", () => ({
+  useFeature: (feature: string) =>
+    feature === "agentBackgroundExecutionBackend"
+      ? mockExecutionBackend
+      : undefined,
 }));
 
 vi.mock("@/lib/llm-models.query", () => ({
@@ -185,6 +208,7 @@ beforeEach(() => {
     },
   ];
   mockAgents = [];
+  mockExecutionBackend = null;
 
   vi.mocked(useOrganization).mockReturnValue({
     data: mockOrganization,
@@ -203,6 +227,56 @@ beforeEach(() => {
 });
 
 describe("AgentSettingsPage", () => {
+  it("shows the configured execution backend as a managed row only when enabled", () => {
+    const { rerender } = renderPage();
+
+    expect(
+      screen.queryByRole("heading", { name: "Execution backend" }),
+    ).not.toBeInTheDocument();
+
+    mockExecutionBackend = {
+      name: "kubernetes",
+      available: true,
+      defaultImage: "registry.example.test/agent:latest",
+      defaultTtlHours: 72,
+      defaultIdleTimeoutMinutes: 180,
+      allowPrivileged: false,
+      resources: {
+        cpuRequest: "500m",
+        memoryRequest: "1Gi",
+        memoryLimit: "4Gi",
+      },
+    };
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <AgentSettingsPage />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Execution backend" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add backend" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Edit Kubernetes" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Delete Kubernetes" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByText("registry.example.test/agent:latest"),
+    ).not.toBeInTheDocument();
+
+    const messagingChannels = screen.getByText("Available messaging channels");
+    const executionBackend = screen.getByRole("heading", {
+      name: "Execution backend",
+    });
+    expect(
+      messagingChannels.compareDocumentPosition(executionBackend) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("lets users reset the org default model selection", async () => {
     const user = userEvent.setup();
 

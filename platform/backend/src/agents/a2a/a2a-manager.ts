@@ -22,7 +22,17 @@ import {
 } from "@/models";
 import { RouteCategory, startActiveChatSpan } from "@/observability/tracing";
 import { validateMCPGatewayToken } from "@/routes/mcp-gateway/utils";
-import type { A2AContext, A2AMessage } from "@/types";
+import {
+  resolveAgentDeployment,
+  resumeBackgroundTask,
+  runTaskInBackground,
+} from "@/services/runners/pod-execution";
+import type {
+  A2AContext,
+  A2AMessage,
+  AgentRun,
+  AgentRunCompletionTarget,
+} from "@/types";
 import { isTerminalA2ATaskState } from "@/types/a2a-task";
 import {
   type OutboundUrlRejection,
@@ -150,8 +160,13 @@ export interface A2ASystemParams {
   sessionId?: string;
   source?: InteractionSource;
   routeCategory?: RouteCategory;
-  chatOpsBindingId?: string;
-  chatOpsThreadId?: string;
+  completionTarget?: AgentRunCompletionTarget;
+  /**
+   * Interactive is reserved for a person opening the execution terminal in
+   * Chat. Every other durable task is one-shot so delegation surfaces can
+   * receive a terminal result without waiting for somebody to exit a TUI.
+   */
+  backgroundExecutionMode?: "interactive" | "one_shot";
   /**
    * Per-turn framing prepended to the executed user turn but NOT
    * persisted with it. Callers with server-side sessions (chatops) put
@@ -178,6 +193,41 @@ export class A2AManager {
 
   constructor(config?: A2AManagerConfig) {
     this.config = config ?? {};
+  }
+
+  /**
+   * Re-adopt a container-backed task whose Job outlived the backend process
+   * that launched it. The ordinary lifecycle remains authoritative, so the
+   * recovered run produces the same artifact and terminal events as a run
+   * that never crossed a restart.
+   */
+  public async adoptBackgroundTask(params: {
+    taskId: string;
+    session: AgentRun;
+  }): Promise<void> {
+    if (this.config.taskMode !== "full") {
+      throw new Error(
+        "[A2AManager] Background task adoption requires full mode",
+      );
+    }
+    const task = await A2ATaskManager.loadTaskWithDataById(params.taskId);
+    if (
+      task.state !== A2AProtocolTaskState.Submitted &&
+      task.state !== A2AProtocolTaskState.Working
+    ) {
+      return;
+    }
+    await this.runTaskLifecycle({
+      task,
+      contextId: task.contextId,
+      survivesRestart: true,
+      executeRun: (runOpts) =>
+        resumeBackgroundTask({
+          session: params.session,
+          onTextDelta: runOpts.onTextDelta,
+          abortSignal: runOpts.abortSignal,
+        }),
+    });
   }
 
   public async sendMessage(params: {
@@ -222,7 +272,7 @@ export class A2AManager {
     onDetachedTaskRun?: (info: {
       taskId: string;
       followFromSeq: number;
-    }) => void;
+    }) => void | Promise<void>;
   }): Promise<A2AProtocolSendMessageResponse> {
     // Set once an approval resume has CAS'd the task to WORKING: if anything
     // between that point and the run lifecycle taking ownership throws
@@ -518,9 +568,16 @@ export class A2AManager {
             })
           : [],
       ]);
+      // Background execution belongs to the Agent itself and is selected only
+      // for a durable task. Invocation surfaces decide whether a plain send
+      // should remain a Message or be promoted to that task lifecycle.
+      const deployment = resolveAgentDeployment(agent);
+
       const executeRun = (runOpts: {
         abortSignal?: AbortSignal;
         onTextDelta?: (delta: string) => void;
+        /** Present only under the task lifecycle; a plain send has no task. */
+        taskId?: string;
       }) =>
         startActiveChatSpan({
           agentName: agent.name,
@@ -534,6 +591,29 @@ export class A2AManager {
             ? { id: a2aUser.id, email: a2aUser.email, name: a2aUser.name }
             : null,
           callback: async () => {
+            // Only a task run goes to the container. This keeps the runtime
+            // decision independent from the protocol surface: A2A can promote
+            // a direct send, while foreground Chat can remain message-based.
+            if (deployment && runOpts.taskId) {
+              return runTaskInBackground({
+                deployment,
+                // The task is the pod's identity: one session per task, so a
+                // resumed task adopts its own pod rather than starting a second.
+                taskId: runOpts.taskId,
+                agentId,
+                actor,
+                organizationId: actor.organizationId,
+                completionTarget: systemParams?.completionTarget,
+                task: executedTurnText,
+                modelId: agent.modelId,
+                llmApiKeyId: agent.llmApiKeyId,
+                executionMode:
+                  systemParams?.backgroundExecutionMode ?? "one_shot",
+                titleUserId: actor.kind === "user" ? actor.id : undefined,
+                onTextDelta: runOpts.onTextDelta,
+                abortSignal: runOpts.abortSignal,
+              });
+            }
             return executeA2AMessage({
               agentId,
               message: executedTurnText,
@@ -549,8 +629,14 @@ export class A2AManager {
               parentDelegationChain: undefined, // This is the root call, chain starts with agentId
               blockOnApprovalRequired: false, // No need to block. We check approval flow availability below
               originalUiMessages: contextUiMessages,
-              chatOpsBindingId: systemParams?.chatOpsBindingId,
-              chatOpsThreadId: systemParams?.chatOpsThreadId,
+              chatOpsBindingId:
+                systemParams?.completionTarget?.type === "chatops"
+                  ? systemParams.completionTarget.bindingId
+                  : undefined,
+              chatOpsThreadId:
+                systemParams?.completionTarget?.type === "chatops"
+                  ? systemParams.completionTarget.threadId
+                  : undefined,
               onTextDelta: runOpts.onTextDelta,
               abortSignal: runOpts.abortSignal,
             });
@@ -600,11 +686,12 @@ export class A2AManager {
             task: runTask,
             contextId: runContextId,
             executeRun,
+            survivesRestart: Boolean(deployment),
           });
 
         if (params.taskRun?.detached) {
           const snapshot = A2ATaskManager.toProtocolTask(runTask);
-          params.onDetachedTaskRun?.({
+          await params.onDetachedTaskRun?.({
             taskId: runTask.id,
             followFromSeq: task ? resumeWatermark : 0,
           });
@@ -758,7 +845,10 @@ export class A2AManager {
     executeRun: (runOpts: {
       abortSignal?: AbortSignal;
       onTextDelta?: (delta: string) => void;
+      taskId?: string;
     }) => Promise<A2AExecuteResult>;
+    /** This task's work runs in a container, so it outlives this process. */
+    survivesRestart?: boolean;
   }): Promise<A2AProtocolSendMessageResponse> {
     const { contextId } = params;
     let task = params.task;
@@ -810,6 +900,7 @@ export class A2AManager {
     let isFirstChunk = true;
     const run = a2aTaskRunService.startRun({
       taskId,
+      survivesRestart: params.survivesRestart,
       artifact: { id: artifactId, name: RESPONSE_ARTIFACT_NAME },
       buildDeltaEvent: (chunk) => {
         const append = !isFirstChunk;
@@ -833,6 +924,7 @@ export class A2AManager {
       const result = await params.executeRun({
         abortSignal: run.signal,
         onTextDelta: run.onTextDelta,
+        taskId,
       });
       await run.drainDeltas();
 

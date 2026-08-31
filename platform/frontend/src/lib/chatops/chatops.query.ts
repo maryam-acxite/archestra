@@ -1,12 +1,13 @@
 import { archestraApiSdk, type archestraApiTypes } from "@archestra/shared";
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { handleApiError, throwOnApiError } from "@/lib/utils";
+import { handleApiError, throwOnApiError, toApiError } from "@/lib/utils";
 
 export function useChatOpsStatus() {
   return useQuery({
@@ -45,6 +46,41 @@ export function useChatOpsBindings(
   });
 }
 
+/**
+ * Load every channel visible to the current user for the agent assignment
+ * picker. The public list endpoint is capped at 100 rows, so the picker walks
+ * every page instead of silently making channels past the first page
+ * impossible to assign.
+ */
+export function useAllChatOpsBindings() {
+  const limit = 100;
+
+  return useInfiniteQuery({
+    queryKey: ["chatops", "bindings", "all"],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const { data, error } = await archestraApiSdk.listChatOpsBindings({
+        query: {
+          limit,
+          offset: pageParam,
+          sortBy: "channelName",
+          sortDirection: "asc",
+        },
+      });
+      throwOnApiError(error, { toastOnError: false });
+      return data;
+    },
+    getNextPageParam: (lastPage) =>
+      lastPage?.pagination.hasNext
+        ? lastPage.pagination.currentPage * limit
+        : undefined,
+    select: (data) => ({
+      ...data,
+      bindings: data.pages.flatMap((page) => page?.data ?? []),
+    }),
+  });
+}
+
 export function useUpdateChatOpsBinding() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -80,12 +116,45 @@ export function useUpdateChatOpsBinding() {
   });
 }
 
+export function useApplyChatOpsBindingPlan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      body: archestraApiTypes.ApplyChatOpsBindingPlanData["body"],
+    ) => {
+      const { data, error } = await archestraApiSdk.applyChatOpsBindingPlan({
+        body,
+      });
+      if (error) {
+        handleApiError(error);
+        throw toApiError(error);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Channel changes saved");
+      queryClient.invalidateQueries({ queryKey: ["chatops", "bindings"] });
+    },
+  });
+}
+
 export function useBulkUpdateChatOpsBindings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { ids: string[]; agentId: string | null }) => {
+    mutationFn: async (params: {
+      ids: string[];
+      agentId: string | null;
+      expectedAgentAssignments?: Array<{
+        id: string;
+        agentId: string | null;
+      }>;
+    }) => {
       const { data, error } = await archestraApiSdk.bulkUpdateChatOpsBindings({
-        body: { ids: params.ids, agentId: params.agentId },
+        body: {
+          ids: params.ids,
+          agentId: params.agentId,
+          expectedAgentAssignments: params.expectedAgentAssignments,
+        },
       });
       if (error) {
         handleApiError(error);
@@ -109,6 +178,7 @@ export function useCreateChatOpsDmBinding() {
     mutationFn: async (params: {
       provider: "ms-teams" | "slack" | "telegram";
       agentId: string | null;
+      requireNoExistingBinding?: true;
     }) => {
       const { data, error } = await archestraApiSdk.createChatOpsDmBinding({
         body: params,

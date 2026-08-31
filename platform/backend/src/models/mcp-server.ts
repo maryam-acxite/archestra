@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import mcpClient from "@/clients/mcp-client";
+import config from "@/config";
 import db, { schema, type Transaction } from "@/database";
 import { notDeleted } from "@/database/schemas/soft-deletable-table";
 import { hardDelete, restore, softDelete } from "@/database/soft-delete";
@@ -72,7 +73,8 @@ const scopeRank = (scope: ResourceVisibilityScope): number =>
  *
  * @public — consumed by the idle-hibernation sweeper and tests
  */
-export const MCP_SERVER_LAST_USED_REFRESH_INTERVAL_MS = 30_000;
+export const MCP_SERVER_LAST_USED_REFRESH_INTERVAL_MS =
+  config.orchestrator.mcpIdleHibernation.lastUsedRefreshIntervalMs;
 
 /**
  * How often a server with a call in flight has `lastUsedAt` re-stamped, so a
@@ -91,7 +93,7 @@ export const MCP_SERVER_LAST_USED_REFRESH_INTERVAL_MS = 30_000;
  * @public — consumed by the idle-hibernation sweeper, the demand tracker, and tests
  */
 export const MCP_DEMAND_HEARTBEAT_INTERVAL_MS =
-  MCP_SERVER_LAST_USED_REFRESH_INTERVAL_MS / 2;
+  config.orchestrator.mcpIdleHibernation.demandHeartbeatIntervalMs;
 // SPDX-SnippetEnd
 
 /**
@@ -225,6 +227,27 @@ class McpServerModel {
       );
 
     return mcpServers.map((s) => s.mcpServerId);
+  }
+
+  private static async getUserAccessibleMcpServerIds(
+    userId: string,
+  ): Promise<string[]> {
+    const [
+      teamAccessibleMcpServerIds,
+      personalMcpServerIds,
+      orgScopedMcpServerIds,
+    ] = await Promise.all([
+      McpServerModel.getUserAccessibleMcpServerIdsByTeam(userId),
+      McpServerUserModel.getUserPersonalMcpServerIds(userId),
+      McpServerModel.getOrgScopedMcpServerIds(),
+    ]);
+    return [
+      ...new Set([
+        ...teamAccessibleMcpServerIds,
+        ...personalMcpServerIds,
+        ...orgScopedMcpServerIds,
+      ]),
+    ];
   }
 
   /**
@@ -418,6 +441,58 @@ class McpServerModel {
   }
 
   /**
+   * Local installation ids visible to one websocket subscriber, without the
+   * list endpoint's user, agent, secret and credential enrichment. Deployment
+   * status needs only the ids; the visibility rules must stay identical to
+   * {@link McpServerModel.findAll}.
+   */
+  static async findVisibleLocalIds(params: {
+    userId: string;
+    isMcpServerAdmin: boolean;
+    organizationId: string;
+    isPredefinedAdmin: boolean;
+  }): Promise<string[]> {
+    const { userId, isMcpServerAdmin, organizationId, isPredefinedAdmin } =
+      params;
+    const conditions: SQL[] = [
+      notDeleted(schema.mcpServersTable),
+      eq(schema.mcpServersTable.serverType, "local"),
+    ];
+    const catalogBelongsToOrganization = or(
+      isNull(schema.internalMcpCatalogTable.organizationId),
+      eq(schema.internalMcpCatalogTable.organizationId, organizationId),
+    );
+    if (catalogBelongsToOrganization) {
+      conditions.push(catalogBelongsToOrganization);
+    }
+
+    if (!isPredefinedAdmin && isMcpServerAdmin) {
+      const sharedOrOwnedInstall = or(
+        ne(schema.mcpServersTable.scope, "personal"),
+        eq(schema.mcpServersTable.ownerId, userId),
+      );
+      if (sharedOrOwnedInstall) conditions.push(sharedOrOwnedInstall);
+    } else if (!isPredefinedAdmin) {
+      const accessibleMcpServerIds =
+        await McpServerModel.getUserAccessibleMcpServerIds(userId);
+      if (accessibleMcpServerIds.length === 0) return [];
+      conditions.push(
+        inArray(schema.mcpServersTable.id, accessibleMcpServerIds),
+      );
+    }
+
+    const rows = await db
+      .select({ id: schema.mcpServersTable.id })
+      .from(schema.mcpServersTable)
+      .leftJoin(
+        schema.internalMcpCatalogTable,
+        eq(schema.mcpServersTable.catalogId, schema.internalMcpCatalogTable.id),
+      )
+      .where(and(...conditions));
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * @param environmentId when set (null = Default environment), restricts
    * results to deployments whose catalog item is visible from that environment.
    * An MCP server has no environment column of its own — it inherits one from
@@ -507,24 +582,8 @@ class McpServerModel {
       // 1. Team membership (servers assigned to user's teams)
       // 2. Personal access (user's own servers)
       // 3. Org-scoped servers (visible to all org members)
-      const [
-        teamAccessibleMcpServerIds,
-        personalMcpServerIds,
-        orgScopedMcpServerIds,
-      ] = await Promise.all([
-        McpServerModel.getUserAccessibleMcpServerIdsByTeam(userId),
-        McpServerUserModel.getUserPersonalMcpServerIds(userId),
-        McpServerModel.getOrgScopedMcpServerIds(),
-      ]);
-
-      // Combine all lists
-      const accessibleMcpServerIds = [
-        ...new Set([
-          ...teamAccessibleMcpServerIds,
-          ...personalMcpServerIds,
-          ...orgScopedMcpServerIds,
-        ]),
-      ];
+      const accessibleMcpServerIds =
+        await McpServerModel.getUserAccessibleMcpServerIds(userId);
 
       if (accessibleMcpServerIds.length === 0) {
         return [];

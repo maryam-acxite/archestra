@@ -47,7 +47,11 @@ import {
   resolveDefaultAgentBadge,
 } from "@/components/default-agent-tag";
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog";
-import { FilterBar, filterSearchClass } from "@/components/filter-bar";
+import {
+  CollectionFilters,
+  FilterBar,
+  filterSearchClass,
+} from "@/components/filter-bar";
 import { ImportAgentDialog } from "@/components/import-agent-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { PERMANENT_DELETE_LABEL } from "@/components/permanent-delete";
@@ -333,7 +337,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
   const filterSignature = JSON.stringify(listFilters);
   const [escalatedFor, setEscalatedFor] = useState<string | null>(null);
   const allMatchingSelected = escalatedFor === filterSignature;
-  const { effectiveRowSelection, onRowSelectionChange } =
+  const { effectiveRowSelection, onRowSelectionChange, rangeSelection } =
     useControlledRowSelection({
       rowSelection,
       setRowSelection,
@@ -347,6 +351,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
     getRowId: (row) => row.id,
     rowSelection: effectiveRowSelection,
     setRowSelection: onRowSelectionChange,
+    rangeSelection,
   });
   const { data: allMatching, isFetching: isFetchingAllMatching } =
     useAllMatchingProfiles(listFilters, { enabled: allMatchingSelected });
@@ -616,8 +621,9 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
       <TableCardView storageKey="archestra-agents-view">
         <div>
           <div>
-            <div className="mb-3 flex flex-col gap-2">
+            <CollectionFilters>
               <FilterBar
+                leading
                 actions={!isDeletedView ? <TableCardViewToggle /> : undefined}
               >
                 <SearchInput
@@ -644,7 +650,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
                 />
               )}
               <ActiveFilterBadges adminPermission={{ agent: ["admin"] }} />
-            </div>
+            </CollectionFilters>
 
             <BulkActions
               count={selectedAgents.length}
@@ -712,6 +718,12 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
                         }
                         description={agent.description}
                         actions={renderAgentActions(agent)}
+                        onNavigate={
+                          isDeletedView
+                            ? undefined
+                            : () =>
+                                router.push(agentDetailHref("agent", agent.id))
+                        }
                         {...cardSelection(agent)}
                         selectionLabel={`Select ${agent.name}`}
                         footer={
@@ -745,6 +757,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
                     getRowId={(row) => row.id}
                     rowSelection={effectiveRowSelection}
                     onRowSelectionChange={onRowSelectionChange}
+                    rangeSelection={rangeSelection}
                     hideSelectedCount
                     sorting={sorting}
                     onSortingChange={handleSortingChange}
